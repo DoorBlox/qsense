@@ -30,7 +30,24 @@ SUPABASE_UPDATE_INTERVAL = 5
 CAMERA_RECONNECT_DELAY = 2
 
 ENTRY_CONFIRM_TIME = 0.75
-EXIT_CONFIRM_TIME = 0.75
+EXIT_CONFIRM_TIME = 1.0
+
+# =========================================================
+# EVENT CONFIGURATION
+# =========================================================
+# For strict deployment set REQUIRE_SERVED_DIRECTION=true.
+# For PoC/demo false is more reliable.
+# =========================================================
+
+REQUIRE_SERVED_DIRECTION = (
+    os.getenv(
+        "QSENSE_REQUIRE_SERVED_DIRECTION",
+        "false"
+    )
+    .strip()
+    .lower()
+    == "true"
+)
 
 
 # =========================================================
@@ -142,6 +159,20 @@ TEST_MODE = (
     .strip()
     .lower()
     == "true"
+)
+
+REQUIRE_SERVED_DIRECTION = (
+    os.getenv(
+        "QSENSE_REQUIRE_SERVED_DIRECTION",
+        "false"
+    )
+    .strip()
+    .lower()
+    == "true"
+)
+
+print(
+    f"Require served direction: {REQUIRE_SERVED_DIRECTION}"
 )
 
 if not SUPABASE_URL:
@@ -1505,21 +1536,23 @@ try:
                 )
 
 
-                crossed_to_served = (
-                    crossed
-                    and
-                    not old_served_side
-                    and
-                    new_served_side
-                )
+                if REQUIRE_SERVED_DIRECTION:
+
+                    crossed_to_served = (
+                        crossed
+                        and
+                        not old_served_side
+                        and
+                        new_served_side
+                    )
+
+                else:
+
+                    crossed_to_served = crossed
 
 
                 if (
                     crossed_to_served
-                    and
-                    person[
-                        "confirmed_inside"
-                    ]
                     and
                     not person[
                         "served"
@@ -1637,8 +1670,9 @@ try:
                     not inside_now
                     and
                     person[
-                        "confirmed_inside"
+                        "entry_time"
                     ]
+                    is not None
                     and
                     not person[
                         "served"
