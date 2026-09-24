@@ -233,3 +233,7 @@ __pycache__/
 
 # Logs
 *.log
+
+# Next.js source library must be tracked
+!web/src/lib/
+!web/src/lib/supabase.ts
