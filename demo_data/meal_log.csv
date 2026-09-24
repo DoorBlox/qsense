@@ -1,0 +1,43 @@
+date,meal_period,menu_id,staple,animal_protein,plant_protein,vegetable,fruit,drink,data_source
+2026-09-01,breakfast,M001,Bubur ayam,Ayam suwir,,,Pisang,Teh,SYNTHETIC_DEMO
+2026-09-01,lunch,M004,Nasi putih,Ayam goreng,Tempe,Sayur sop,Semangka,Air putih,SYNTHETIC_DEMO
+2026-09-01,dinner,M007,Nasi putih,Ayam kecap,Tahu,Tumis sawi,Jeruk,Air putih,SYNTHETIC_DEMO
+2026-09-02,breakfast,M002,Nasi goreng,Telur,Tempe,Acar,Jeruk,Teh,SYNTHETIC_DEMO
+2026-09-02,lunch,M005,Nasi putih,Ikan goreng,Tahu,Capcay,Pisang,Air putih,SYNTHETIC_DEMO
+2026-09-02,dinner,M008,Mie goreng,Ayam suwir,Tempe,Sawi,Semangka,Air putih,SYNTHETIC_DEMO
+2026-09-03,breakfast,M003,Roti,Telur,,,Semangka,Susu,SYNTHETIC_DEMO
+2026-09-03,lunch,M006,Nasi putih,Daging sapi,Tempe,Sayur asem,Melon,Air putih,SYNTHETIC_DEMO
+2026-09-03,dinner,M009,Nasi putih,Ikan,Tahu,Sup sayur,Pisang,Air putih,SYNTHETIC_DEMO
+2026-09-04,breakfast,M001,Bubur ayam,Ayam suwir,,,Pisang,Teh,SYNTHETIC_DEMO
+2026-09-04,lunch,M004,Nasi putih,Ayam goreng,Tempe,Sayur sop,Semangka,Air putih,SYNTHETIC_DEMO
+2026-09-04,dinner,M007,Nasi putih,Ayam kecap,Tahu,Tumis sawi,Jeruk,Air putih,SYNTHETIC_DEMO
+2026-09-05,breakfast,M002,Nasi goreng,Telur,Tempe,Acar,Jeruk,Teh,SYNTHETIC_DEMO
+2026-09-05,lunch,M005,Nasi putih,Ikan goreng,Tahu,Capcay,Pisang,Air putih,SYNTHETIC_DEMO
+2026-09-05,dinner,M008,Mie goreng,Ayam suwir,Tempe,Sawi,Semangka,Air putih,SYNTHETIC_DEMO
+2026-09-06,breakfast,M003,Roti,Telur,,,Semangka,Susu,SYNTHETIC_DEMO
+2026-09-06,lunch,M006,Nasi putih,Daging sapi,Tempe,Sayur asem,Melon,Air putih,SYNTHETIC_DEMO
+2026-09-06,dinner,M009,Nasi putih,Ikan,Tahu,Sup sayur,Pisang,Air putih,SYNTHETIC_DEMO
+2026-09-07,breakfast,M001,Bubur ayam,Ayam suwir,,,Pisang,Teh,SYNTHETIC_DEMO
+2026-09-07,lunch,M004,Nasi putih,Ayam goreng,Tempe,Sayur sop,Semangka,Air putih,SYNTHETIC_DEMO
+2026-09-07,dinner,M007,Nasi putih,Ayam kecap,Tahu,Tumis sawi,Jeruk,Air putih,SYNTHETIC_DEMO
+2026-09-08,breakfast,M002,Nasi goreng,Telur,Tempe,Acar,Jeruk,Teh,SYNTHETIC_DEMO
+2026-09-08,lunch,M005,Nasi putih,Ikan goreng,Tahu,Capcay,Pisang,Air putih,SYNTHETIC_DEMO
+2026-09-08,dinner,M008,Mie goreng,Ayam suwir,Tempe,Sawi,Semangka,Air putih,SYNTHETIC_DEMO
+2026-09-09,breakfast,M003,Roti,Telur,,,Semangka,Susu,SYNTHETIC_DEMO
+2026-09-09,lunch,M006,Nasi putih,Daging sapi,Tempe,Sayur asem,Melon,Air putih,SYNTHETIC_DEMO
+2026-09-09,dinner,M009,Nasi putih,Ikan,Tahu,Sup sayur,Pisang,Air putih,SYNTHETIC_DEMO
+2026-09-10,breakfast,M001,Bubur ayam,Ayam suwir,,,Pisang,Teh,SYNTHETIC_DEMO
+2026-09-10,lunch,M004,Nasi putih,Ayam goreng,Tempe,Sayur sop,Semangka,Air putih,SYNTHETIC_DEMO
+2026-09-10,dinner,M007,Nasi putih,Ayam kecap,Tahu,Tumis sawi,Jeruk,Air putih,SYNTHETIC_DEMO
+2026-09-11,breakfast,M002,Nasi goreng,Telur,Tempe,Acar,Jeruk,Teh,SYNTHETIC_DEMO
+2026-09-11,lunch,M005,Nasi putih,Ikan goreng,Tahu,Capcay,Pisang,Air putih,SYNTHETIC_DEMO
+2026-09-11,dinner,M008,Mie goreng,Ayam suwir,Tempe,Sawi,Semangka,Air putih,SYNTHETIC_DEMO
+2026-09-12,breakfast,M003,Roti,Telur,,,Semangka,Susu,SYNTHETIC_DEMO
+2026-09-12,lunch,M006,Nasi putih,Daging sapi,Tempe,Sayur asem,Melon,Air putih,SYNTHETIC_DEMO
+2026-09-12,dinner,M009,Nasi putih,Ikan,Tahu,Sup sayur,Pisang,Air putih,SYNTHETIC_DEMO
+2026-09-13,breakfast,M001,Bubur ayam,Ayam suwir,,,Pisang,Teh,SYNTHETIC_DEMO
+2026-09-13,lunch,M004,Nasi putih,Ayam goreng,Tempe,Sayur sop,Semangka,Air putih,SYNTHETIC_DEMO
+2026-09-13,dinner,M007,Nasi putih,Ayam kecap,Tahu,Tumis sawi,Jeruk,Air putih,SYNTHETIC_DEMO
+2026-09-14,breakfast,M002,Nasi goreng,Telur,Tempe,Acar,Jeruk,Teh,SYNTHETIC_DEMO
+2026-09-14,lunch,M005,Nasi putih,Ikan goreng,Tahu,Capcay,Pisang,Air putih,SYNTHETIC_DEMO
+2026-09-14,dinner,M008,Mie goreng,Ayam suwir,Tempe,Sawi,Semangka,Air putih,SYNTHETIC_DEMO

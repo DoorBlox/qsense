@@ -1,0 +1,8 @@
+weekday,sessions,mean_queue,mean_peak_queue,mean_wait_seconds,mean_served
+Monday,6,6.46,17.17,199.62,110.83
+Tuesday,6,6.48,17.33,202.66,116.0
+Wednesday,6,5.87,15.67,188.58,110.17
+Thursday,6,6.06,16.5,190.69,116.33
+Friday,6,6.27,16.83,195.34,142.67
+Saturday,6,6.16,16.5,192.87,121.33
+Sunday,6,6.19,16.67,191.43,103.33

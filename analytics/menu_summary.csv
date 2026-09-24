@@ -1,0 +1,10 @@
+menu_id,occurrences,meal_period,staple,animal_protein,mean_queue,mean_peak_queue,peak_queue_std,mean_queue_burden,mean_wait_seconds,mean_served,mean_abandonment_pct,mean_peak_uplift_pct
+M001,5,breakfast,Bubur ayam,Ayam suwir,4.48,12.0,0.0,537.5,150.29,102.2,1.0,-2.89
+M002,5,breakfast,Nasi goreng,Telur,5.54,14.8,0.45,665.2,178.23,105.2,1.56,19.77
+M003,4,breakfast,Roti,Telur,3.68,9.75,0.5,441.38,135.19,83.0,0.86,-21.1
+M004,5,lunch,Nasi putih,Ayam goreng,8.82,24.0,1.58,1058.0,262.13,151.0,2.15,12.75
+M005,5,lunch,Nasi putih,Ikan goreng,6.43,17.6,1.14,771.0,200.48,135.2,1.91,-17.32
+M006,4,lunch,Nasi putih,Daging sapi,8.29,22.5,1.73,994.88,246.72,131.25,1.84,5.7
+M007,5,dinner,Nasi putih,Ayam kecap,6.27,16.6,0.55,752.6,194.21,112.6,2.6,1.49
+M008,5,dinner,Mie goreng,Ayam suwir,6.93,18.2,1.3,831.5,209.23,133.2,2.22,11.27
+M009,4,dinner,Nasi putih,Ikan,5.18,13.75,0.96,621.62,166.67,92.5,2.67,-15.94

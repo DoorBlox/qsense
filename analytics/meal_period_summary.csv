@@ -1,0 +1,4 @@
+meal_period,sessions,mean_queue,median_queue,mean_peak_queue,maximum_peak_queue,mean_queue_burden,mean_wait_seconds,median_wait_seconds,mean_served,mean_abandonment_rate
+breakfast,14,4.63,3.39,12.36,15,555.64,155.95,162.77,97.79,1.16
+dinner,14,6.19,4.68,16.36,20,743.36,191.71,205.94,114.21,2.49
+lunch,14,7.81,5.61,21.29,26,937.46,235.71,252.96,139.71,1.98

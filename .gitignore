@@ -216,3 +216,20 @@ __marimo__/
 
 # Streamlit
 .streamlit/secrets.toml
+
+# Q-SENSE secrets
+.env
+
+# Real research data
+data/
+
+# Downloaded AI model weights
+*.pt
+weights/
+
+# Python/runtime
+__pycache__/
+*.pyc
+
+# Logs
+*.log
