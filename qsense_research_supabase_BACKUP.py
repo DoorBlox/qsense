@@ -5,6 +5,7 @@ import json
 import os
 import csv
 import time
+import atexit
 
 from datetime import datetime, time as dt_time
 from collections import deque
@@ -27,7 +28,6 @@ DATA_DIR = "data"
 
 SNAPSHOT_INTERVAL = 5
 SUPABASE_UPDATE_INTERVAL = 5
-CAMERA_RECONNECT_DELAY = 2
 
 ENTRY_CONFIRM_TIME = 0.75
 EXIT_CONFIRM_TIME = 0.75
@@ -255,21 +255,6 @@ def mark_offline():
                 "offline",
 
             "queue_count":
-                0,
-
-            "entries":
-                0,
-
-            "served":
-                0,
-
-            "abandoned":
-                0,
-
-            "avg_wait_seconds":
-                0,
-
-            "throughput_per_min":
                 0,
 
             "updated_at":
@@ -791,34 +776,16 @@ current_session = None
 # CAMERA
 # =========================================================
 
-def open_camera():
+cap = cv2.VideoCapture(
+    CAMERA_SOURCE
+)
+
+if not cap.isOpened():
 
     print(
-        f"Opening camera: {CAMERA_SOURCE}"
+        "ERROR: Cannot open camera."
     )
 
-    camera = cv2.VideoCapture(
-        CAMERA_SOURCE
-    )
-
-    if not camera.isOpened():
-
-        print(
-            "ERROR: Cannot open camera."
-        )
-
-        return None
-
-    print(
-        "Camera connected."
-    )
-
-    return camera
-
-
-cap = open_camera()
-
-if cap is None:
     raise SystemExit
 
 
@@ -872,62 +839,10 @@ try:
         if not ret:
 
             print(
-                "Camera stream lost. "
-                "Attempting reconnect..."
+                "Camera frame failed."
             )
 
-            safe_supabase_update({
-
-                "updated_at":
-                    datetime.now().isoformat(),
-
-                "meal_period":
-                    "offline",
-
-                "queue_count":
-                    0,
-
-                "queue_status":
-                    "offline",
-
-                "trend":
-                    "stable",
-
-                "entries":
-                    0,
-
-                "served":
-                    0,
-
-                "abandoned":
-                    0,
-
-                "avg_wait_seconds":
-                    0,
-
-                "throughput_per_min":
-                    0,
-
-                "camera_online":
-                    False
-            })
-
-            try:
-                cap.release()
-            except Exception:
-                pass
-
-            time.sleep(
-                CAMERA_RECONNECT_DELAY
-            )
-
-            cap = open_camera()
-
-            if cap is None:
-                continue
-
-            track_data.clear()
-            continue
+            break
 
 
         display = frame.copy()
@@ -1046,41 +961,44 @@ try:
                 >= SUPABASE_UPDATE_INTERVAL
             ):
 
-                safe_supabase_update({
+		safe_supabase_update({
 
-                    "updated_at":
-                        now.isoformat(),
+		    "updated_at":
+		        now.isoformat(),
+	
+		    "meal_period":
+		        meal,
 
-                    "meal_period":
-                        "outside_meal",
+		    "queue_count":
+		        queue_count,
 
-                    "queue_count":
-                        0,
+		    "queue_status":
+		        queue_status,
 
-                    "queue_status":
-                        "outside_meal",
+		    "trend":
+		        trend,
 
-                    "trend":
-                        "stable",
+		    "entries":
+		        total_entries,
 
-                    "entries":
-                        0,
+		    "served":
+		        total_served,
 
-                    "served":
-                        0,
+		    "abandoned":
+		        total_abandoned,
 
-                    "abandoned":
-                        0,
+		    "avg_wait_seconds":
+		        round(
+		            avg_wait,
+		            2
+		        ),
 
-                    "avg_wait_seconds":
-                        0,
+		    "throughput_per_min":
+		        throughput,
 
-                    "throughput_per_min":
-                        0,
-
-                    "camera_online":
-                        True
-                })
+		    "camera_online":
+		        True
+		})
 
                 last_supabase_update = (
                     now_timestamp
@@ -2006,14 +1924,8 @@ try:
                 "trend":
                     trend,
 
-                "entries":
-                    total_entries,
-
                 "served":
                     total_served,
-
-                "abandoned":
-                    total_abandoned,
 
                 "avg_wait_seconds":
                     round(

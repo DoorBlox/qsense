@@ -1,69 +1,101 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import {
+  useCallback,
+  useEffect,
+  useMemo,
+  useState,
+  type ReactNode,
+} from "react";
+
 import { supabase } from "@/lib/supabase";
 
 import {
   Activity,
+  ArrowRight,
   BarChart3,
   Camera,
+  Check,
   CheckCircle2,
-  ChevronRight,
   Clock3,
   Database,
   Gauge,
-  History,
+  Heart,
   Info,
-  Menu as MenuIcon,
+  Radio,
   ShieldCheck,
-  TrendingDown,
   TrendingUp,
   Users,
+  UtensilsCrossed,
   Wifi,
   WifiOff,
+  X,
 } from "lucide-react";
 
 import {
+  Area,
+  AreaChart,
+  Bar,
+  BarChart,
   CartesianGrid,
+  Legend,
   Line,
   LineChart,
+  ReferenceLine,
   ResponsiveContainer,
+  Scatter,
+  ScatterChart,
   Tooltip,
   XAxis,
   YAxis,
+  ZAxis,
 } from "recharts";
-
-
-/* =========================================================
-   TYPES
-========================================================= */
 
 type LiveStatus = {
   id: number;
   updated_at: string;
+  section: string;
   meal_period: string;
   queue_count: number;
   queue_status: string;
   trend: string;
+  entries: number;
   served: number;
+  abandoned: number;
   avg_wait_seconds: number;
   throughput_per_min: number;
   camera_online: boolean;
 };
 
-type Snapshot = {
+type SessionMetric = {
   id: number;
-  recorded_at: string;
   session_id: string;
+  service_date: string;
   meal_period: string;
-  queue_count: number;
+  section: string;
+  menu_id: string | null;
+  queue_entry: number;
+  service_completion: number;
+  abandonment: number;
+  avg_wait_seconds: number;
   throughput_per_min: number;
+  peak_queue: number;
+  mean_queue: number;
+  median_queue: number;
+  congestion_duration_min: number;
+  queue_burden_person_min: number;
+  meals_served: number;
+  menu_demand_index: number;
+  menu_acceptance_index: number;
+  data_source: string;
 };
 
 type Meal = {
   id: number;
+  menu_id: string | null;
   meal_date: string;
   meal_period: string;
+  main_dish: string | null;
   staple: string | null;
   animal_protein: string | null;
   plant_protein: string | null;
@@ -71,268 +103,284 @@ type Meal = {
   fruit: string | null;
   drink: string | null;
   other: string | null;
+  data_source: string;
+};
+
+type Snapshot = {
+  id: number;
+  recorded_at: string;
+  session_id: string;
+  meal_period: string;
+  section: string;
+  queue_count: number;
+  throughput_per_min: number;
+  data_source: string;
 };
 
 type Validation = {
   id: number;
   recorded_at: string;
   session_id: string | null;
+  section: string;
   actual_count: number;
   qsense_count: number;
   absolute_error: number | null;
-};
-
-type LivePoint = {
-  time: string;
-  count: number;
+  context: string | null;
+  data_source: string;
 };
 
 type Tab =
-  | "live"
-  | "history"
+  | "overview"
+  | "analytics"
   | "menu"
-  | "validation";
+  | "validation"
+  | "system";
 
+const MEAL_ORDER: Record<string, number> = {
+  breakfast: 1,
+  lunch: 2,
+  dinner: 3,
+};
 
-/* =========================================================
-   MAIN
-========================================================= */
+const COLORS = {
+  ink: "#18352B",
+  tomato: "#E86652",
+  mustard: "#F1BD4A",
+  sage: "#82AE8F",
+  blue: "#5E87A4",
+  purple: "#9877A8",
+};
 
 export default function Home() {
-  const [status, setStatus] = useState<LiveStatus | null>(null);
-
-  const [snapshots, setSnapshots] = useState<Snapshot[]>([]);
+  const [live, setLive] = useState<LiveStatus[]>([]);
+  const [metrics, setMetrics] = useState<SessionMetric[]>([]);
   const [meals, setMeals] = useState<Meal[]>([]);
+  const [snapshots, setSnapshots] = useState<Snapshot[]>([]);
   const [validation, setValidation] = useState<Validation[]>([]);
-
-  const [liveHistory, setLiveHistory] = useState<LivePoint[]>([]);
-
-  const [tab, setTab] = useState<Tab>("live");
-  const [range, setRange] = useState<"24h" | "7d" | "30d">("24h");
-
+  const [tab, setTab] = useState<Tab>("overview");
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-
   const [nowMs, setNowMs] = useState(Date.now());
 
-
-  /* =======================================================
-     LIVE STATUS
-  ======================================================= */
-
-  const loadLiveStatus = useCallback(async () => {
+  const loadLive = useCallback(async () => {
     const { data, error } = await supabase
       .from("live_status")
       .select("*")
-      .eq("id", 1)
-      .single();
+      .order("id");
 
     if (error) {
-      console.error(error);
       setError(error.message);
       setLoading(false);
       return;
     }
 
-    const newStatus = data as LiveStatus;
-
-    setStatus(newStatus);
-
-    setLiveHistory((previous) => {
-      const point: LivePoint = {
-        time: new Date().toLocaleTimeString([], {
-          hour: "2-digit",
-          minute: "2-digit",
-          second: "2-digit",
-        }),
-        count: newStatus.queue_count,
-      };
-
-      return [...previous, point].slice(-50);
-    });
-
+    setLive((data ?? []) as LiveStatus[]);
     setError(null);
     setLoading(false);
   }, []);
 
+  const loadStatic = useCallback(async () => {
+    const [m1, m2, m3, m4] = await Promise.all([
+      supabase
+        .from("session_metrics")
+        .select("*")
+        .order("service_date", { ascending: false }),
 
-  /* =======================================================
-     HISTORICAL DATA
-  ======================================================= */
+      supabase
+        .from("meal_log")
+        .select("*")
+        .order("meal_date", { ascending: false }),
 
-  const loadSnapshots = useCallback(async () => {
-    let hours = 24;
+      supabase
+        .from("queue_snapshots")
+        .select("*")
+        .order("recorded_at", { ascending: true })
+        .limit(2000),
 
-    if (range === "7d") hours = 24 * 7;
-    if (range === "30d") hours = 24 * 30;
+      supabase
+        .from("manual_validation")
+        .select("*")
+        .order("recorded_at", { ascending: true })
+        .limit(1000),
+    ]);
 
-    const since = new Date(
-      Date.now() - hours * 60 * 60 * 1000
-    ).toISOString();
-
-    const { data, error } = await supabase
-      .from("queue_snapshots")
-      .select("*")
-      .gte("recorded_at", since)
-      .order("recorded_at", { ascending: true })
-      .limit(3000);
-
-    if (!error && data) {
-      setSnapshots(data as Snapshot[]);
-    }
-  }, [range]);
-
-
-  /* =======================================================
-     MENU DATA
-  ======================================================= */
-
-  const loadMeals = useCallback(async () => {
-    const { data, error } = await supabase
-      .from("meal_log")
-      .select("*")
-      .order("meal_date", { ascending: false })
-      .limit(30);
-
-    if (!error && data) {
-      setMeals(data as Meal[]);
-    }
+    setMetrics((m1.data ?? []) as SessionMetric[]);
+    setMeals((m2.data ?? []) as Meal[]);
+    setSnapshots((m3.data ?? []) as Snapshot[]);
+    setValidation((m4.data ?? []) as Validation[]);
   }, []);
 
+  useEffect(() => {
+    loadLive();
+    loadStatic();
+  }, [loadLive, loadStatic]);
 
-  /* =======================================================
-     VALIDATION DATA
-  ======================================================= */
+  useEffect(() => {
+    const timer = setInterval(loadLive, 3000);
+    return () => clearInterval(timer);
+  }, [loadLive]);
 
-  const loadValidation = useCallback(async () => {
-    const { data, error } = await supabase
-      .from("manual_validation")
-      .select("*")
-      .order("recorded_at", { ascending: false })
-      .limit(500);
+  useEffect(() => {
+    const timer = setInterval(() => setNowMs(Date.now()), 1000);
+    return () => clearInterval(timer);
+  }, []);
 
-    if (!error && data) {
-      setValidation(data as Validation[]);
+  const sortedMetrics = useMemo(() => {
+    return [...metrics].sort((a, b) => {
+      const dateCompare = b.service_date.localeCompare(
+        a.service_date
+      );
+
+      if (dateCompare !== 0) {
+        return dateCompare;
+      }
+
+      return (
+        (MEAL_ORDER[b.meal_period] ?? 0)
+        -
+        (MEAL_ORDER[a.meal_period] ?? 0)
+      );
+    });
+  }, [metrics]);
+
+  const sortedMeals = useMemo(() => {
+    return [...meals].sort((a, b) => {
+      const dateCompare = b.meal_date.localeCompare(
+        a.meal_date
+      );
+
+      if (dateCompare !== 0) {
+        return dateCompare;
+      }
+
+      return (
+        (MEAL_ORDER[b.meal_period] ?? 0)
+        -
+        (MEAL_ORDER[a.meal_period] ?? 0)
+      );
+    });
+  }, [meals]);
+
+  function isOnline(row: LiveStatus | undefined) {
+    if (!row) {
+      return false;
     }
-  }, []);
 
+    const age =
+      (
+        nowMs
+        -
+        new Date(row.updated_at).getTime()
+      )
+      / 1000;
 
-  /* =======================================================
-     POLLING
-  ======================================================= */
+    return row.camera_online && age < 20;
+  }
 
-  useEffect(() => {
-    loadLiveStatus();
-    loadMeals();
-    loadValidation();
-  }, [
-    loadLiveStatus,
-    loadMeals,
-    loadValidation,
-  ]);
-
-  useEffect(() => {
-    loadSnapshots();
-  }, [loadSnapshots]);
-
-  useEffect(() => {
-    const liveTimer = setInterval(loadLiveStatus, 3000);
-
-    return () => clearInterval(liveTimer);
-  }, [loadLiveStatus]);
-
-  useEffect(() => {
-    const clockTimer = setInterval(() => {
-      setNowMs(Date.now());
-    }, 1000);
-
-    return () => clearInterval(clockTimer);
-  }, []);
-
-
-  /* =======================================================
-     DERIVED LIVE VALUES
-  ======================================================= */
-
-  const lastUpdate = status
-    ? new Date(status.updated_at)
-    : new Date();
-
-  const ageSeconds = Math.max(
-    0,
-    (nowMs - lastUpdate.getTime()) / 1000
+  const male = live.find(
+    (row) => row.section === "male"
   );
 
-  const actuallyOnline =
-    Boolean(status?.camera_online) &&
-    ageSeconds < 20;
+  const female = live.find(
+    (row) => row.section === "female"
+  );
 
-  const trendIcon =
-    status?.trend === "rising" ? (
-      <TrendingUp size={18} />
-    ) : status?.trend === "falling" ? (
-      <TrendingDown size={18} />
-    ) : (
-      <Activity size={18} />
-    );
+  const maleOnline = isOnline(male);
+  const femaleOnline = isOnline(female);
 
+  const onlineRows = live.filter(isOnline);
 
-  /* =======================================================
-     HISTORY ANALYTICS
-  ======================================================= */
+  const totalQueue = onlineRows.reduce(
+    (sum, row) => sum + (row.queue_count ?? 0),
+    0
+  );
 
-  const historyStats = useMemo(() => {
-    if (snapshots.length === 0) {
-      return {
-        average: 0,
-        peak: 0,
-        averageThroughput: 0,
-        observations: 0,
-      };
+  const liveEntries = onlineRows.reduce(
+    (sum, row) => sum + (row.entries ?? 0),
+    0
+  );
+
+  const liveServed = onlineRows.reduce(
+    (sum, row) => sum + (row.served ?? 0),
+    0
+  );
+
+  const liveAbandoned = onlineRows.reduce(
+    (sum, row) => sum + (row.abandoned ?? 0),
+    0
+  );
+
+  const liveThroughput = onlineRows.reduce(
+    (sum, row) =>
+      sum + (row.throughput_per_min ?? 0),
+    0
+  );
+
+  const liveWait =
+    onlineRows.length > 0
+      ?
+        onlineRows.reduce(
+          (sum, row) =>
+            sum + (row.avg_wait_seconds ?? 0),
+          0
+        ) / onlineRows.length
+      :
+        0;
+
+  const latestMetric =
+    sortedMetrics[0] ?? null;
+
+  const latestCurve = useMemo(() => {
+    if (!latestMetric) {
+      return [];
     }
-
-    const queueValues = snapshots.map(
-      (item) => item.queue_count
-    );
-
-    const throughputValues = snapshots.map(
-      (item) => item.throughput_per_min
-    );
-
-    return {
-      average:
-        queueValues.reduce((a, b) => a + b, 0) /
-        queueValues.length,
-
-      peak: Math.max(...queueValues),
-
-      averageThroughput:
-        throughputValues.reduce((a, b) => a + b, 0) /
-        throughputValues.length,
-
-      observations: snapshots.length,
-    };
-  }, [snapshots]);
-
-
-  const historyChartData = useMemo(() => {
-    if (snapshots.length <= 300) {
-      return snapshots;
-    }
-
-    const step = Math.ceil(
-      snapshots.length / 300
-    );
 
     return snapshots.filter(
-      (_, index) => index % step === 0
+      (row) =>
+        row.session_id === latestMetric.session_id
     );
-  }, [snapshots]);
+  }, [latestMetric, snapshots]);
 
+  const sessionChart = useMemo(() => {
+    return [...sortedMetrics]
+      .reverse()
+      .map((row) => ({
+        label:
+          `${formatShortDate(row.service_date)} `
+          + mealShort(row.meal_period),
+        peak: row.peak_queue,
+        mean: row.mean_queue,
+        burden: row.queue_burden_person_min,
+      }));
+  }, [sortedMetrics]);
 
-  /* =======================================================
-     VALIDATION ANALYTICS
-  ======================================================= */
+  const menuMetricData = useMemo(() => {
+    const menuById = new Map(
+      sortedMeals.map(
+        (meal) => [
+          meal.menu_id,
+          meal,
+        ]
+      )
+    );
+
+    return sortedMetrics
+      .filter((row) => row.menu_id)
+      .map((row) => {
+        const meal = menuById.get(
+          row.menu_id
+        );
+
+        return {
+          ...row,
+          main_dish:
+            meal?.main_dish
+            ?? row.menu_id
+            ?? "Menu",
+          meal,
+        };
+      });
+  }, [sortedMeals, sortedMetrics]);
 
   const validationStats = useMemo(() => {
     if (validation.length === 0) {
@@ -341,37 +389,63 @@ export default function Home() {
 
     const errors = validation.map(
       (row) =>
-        row.qsense_count - row.actual_count
+        row.qsense_count
+        -
+        row.actual_count
     );
 
-    const absErrors = errors.map(Math.abs);
+    const absolute =
+      errors.map(Math.abs);
 
     const mae =
-      absErrors.reduce((a, b) => a + b, 0) /
-      absErrors.length;
+      absolute.reduce(
+        (a, b) => a + b,
+        0
+      )
+      /
+      absolute.length;
 
     const rmse = Math.sqrt(
       errors
-        .map((value) => value * value)
-        .reduce((a, b) => a + b, 0) /
-        errors.length
+        .map(
+          (value) =>
+            value * value
+        )
+        .reduce(
+          (a, b) => a + b,
+          0
+        )
+      /
+      errors.length
     );
 
     const bias =
-      errors.reduce((a, b) => a + b, 0) /
+      errors.reduce(
+        (a, b) => a + b,
+        0
+      )
+      /
       errors.length;
 
     const exact =
-      (absErrors.filter((value) => value === 0)
-        .length /
-        absErrors.length) *
-      100;
+      (
+        absolute.filter(
+          (value) => value === 0
+        ).length
+        /
+        absolute.length
+      )
+      * 100;
 
     const withinOne =
-      (absErrors.filter((value) => value <= 1)
-        .length /
-        absErrors.length) *
-      100;
+      (
+        absolute.filter(
+          (value) => value <= 1
+        ).length
+        /
+        absolute.length
+      )
+      * 100;
 
     return {
       n: validation.length,
@@ -380,31 +454,55 @@ export default function Home() {
       bias,
       exact,
       withinOne,
+      mealN:
+        validation.filter(
+          (row) =>
+            row.context === "meal_period"
+        ).length,
+      outsideN:
+        validation.filter(
+          (row) =>
+            row.context === "outside_meal"
+        ).length,
     };
   }, [validation]);
 
-
-  /* =======================================================
-     CURRENT / LATEST MENU
-  ======================================================= */
-
-  const latestMeal =
-    meals.length > 0 ? meals[0] : null;
-
-
-  /* =======================================================
-     LOADING / ERROR
-  ======================================================= */
+  const validationScatter =
+    validation.map((row) => ({
+      actual: row.actual_count,
+      predicted: row.qsense_count,
+      context: row.context,
+    }));
 
   if (loading) {
     return (
-      <main className="min-h-screen bg-[#07090d] text-white flex items-center justify-center">
+      <main
+        className="
+          min-h-screen
+          flex
+          items-center
+          justify-center
+          text-[#18352B]
+        "
+      >
         <div className="text-center">
-          <Activity
-            className="mx-auto mb-4 animate-pulse"
-            size={36}
-          />
-          <p className="text-zinc-400">
+          <div
+            className="
+              w-14
+              h-14
+              rounded-full
+              bg-[#F1BD4A]
+              flex
+              items-center
+              justify-center
+              mx-auto
+              animate-pulse
+            "
+          >
+            <Radio size={25} />
+          </div>
+
+          <p className="mt-4 font-semibold">
             Connecting to Q-SENSE...
           </p>
         </div>
@@ -412,16 +510,29 @@ export default function Home() {
     );
   }
 
-
   if (error) {
     return (
-      <main className="min-h-screen bg-[#07090d] text-white flex items-center justify-center px-6">
-        <div className="max-w-lg text-center">
-          <h1 className="text-4xl font-black">
+      <main
+        className="
+          min-h-screen
+          flex
+          items-center
+          justify-center
+          p-6
+          text-[#18352B]
+        "
+      >
+        <div className="max-w-xl text-center">
+          <X
+            size={40}
+            className="mx-auto text-[#E86652]"
+          />
+
+          <h1 className="text-4xl font-black mt-4">
             Q-SENSE
           </h1>
 
-          <p className="text-red-400 mt-5">
+          <p className="mt-3 text-[#7A7469]">
             {error}
           </p>
         </div>
@@ -429,988 +540,2765 @@ export default function Home() {
     );
   }
 
-
-  if (!status) {
-    return null;
-  }
-
-
-  /* =======================================================
-     PAGE
-  ======================================================= */
-
   return (
-    <main className="min-h-screen bg-[#07090d] text-zinc-100">
-      <div className="max-w-7xl mx-auto px-4 sm:px-6 py-6 sm:py-8">
+    <main
+      className="
+        min-h-screen
+        text-[#18352B]
+      "
+    >
+      <div
+        className="
+          max-w-[1400px]
+          mx-auto
+          px-4
+          sm:px-7
+          lg:px-10
+          py-7
+          sm:py-9
+        "
+      >
+        <header
+          className="
+            flex
+            flex-col
+            lg:flex-row
+            lg:items-center
+            justify-between
+            gap-6
+          "
+        >
+          <div>
+            <div
+              className="
+                flex
+                items-center
+                gap-3
+              "
+            >
+              <div
+                className="
+                  w-12
+                  h-12
+                  rounded-[18px]
+                  bg-[#E86652]
+                  text-white
+                  flex
+                  items-center
+                  justify-center
+                  shadow-[0_6px_0_#B94F40]
+                "
+              >
+                <UtensilsCrossed size={24} />
+              </div>
 
-        {/* =================================================
-            HEADER
-        ================================================= */}
+              <div>
+                <h1
+                  className="
+                    text-3xl
+                    sm:text-4xl
+                    font-black
+                    tracking-[-0.04em]
+                  "
+                >
+                  Q-SENSE
+                </h1>
 
-        <header className="mb-8">
-
-          <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-6">
-
-            <div>
-              <div className="flex items-center gap-3">
-
-                <div className="w-11 h-11 rounded-2xl bg-white text-black flex items-center justify-center">
-                  <Activity size={24} />
-                </div>
-
-                <div>
-                  <h1 className="text-3xl sm:text-4xl font-black tracking-tight">
-                    Q-SENSE
-                  </h1>
-
-                  <p className="text-zinc-500 text-sm">
-                    Queue Sensing & Evaluation System
-                  </p>
-                </div>
-
+                <p
+                  className="
+                    text-sm
+                    text-[#7A7469]
+                  "
+                >
+                  Queue Sensing &
+                  Evaluation System
+                </p>
               </div>
             </div>
 
+            <div
+              className="
+                flex
+                flex-wrap
+                gap-2
+                mt-5
+              "
+            >
+              <Badge color="tomato">
+                LIVE POC
+              </Badge>
 
-            <div className="flex flex-wrap gap-3">
+              <Badge color="sage">
+                2-NODE READY
+              </Badge>
 
-              <StatusPill
-                online={actuallyOnline}
-              />
-
-              <div className="px-4 py-2 rounded-full border border-zinc-800 bg-zinc-900 text-sm capitalize">
-                {status.meal_period.replaceAll("_", " ")}
-              </div>
-
-              {status.meal_period === "test" && (
-                <div className="px-4 py-2 rounded-full border border-yellow-800/60 bg-yellow-500/10 text-yellow-300 text-sm">
-                  TEST MODE
-                </div>
-              )}
-
+              <Badge color="mustard">
+                HISTORICAL: DEMO
+              </Badge>
             </div>
-
           </div>
 
+          <div
+            className="
+              flex
+              flex-wrap
+              items-center
+              gap-3
+            "
+          >
+            <SystemStatus
+              online={onlineRows.length > 0}
+            />
+
+            <div
+              className="
+                px-4
+                py-2.5
+                rounded-full
+                bg-white
+                border
+                border-[#DED6C7]
+                text-sm
+                font-semibold
+              "
+            >
+              {male?.meal_period
+                ?.replaceAll("_", " ")
+                ?.toUpperCase()
+                ?? "OUTSIDE MEAL"}
+            </div>
+          </div>
         </header>
 
+        <section
+          className="
+            mt-8
+            grid
+            lg:grid-cols-[1.2fr_.8fr]
+            gap-5
+          "
+        >
+          <div
+            className="
+              relative
+              overflow-hidden
+              bg-[#18352B]
+              text-white
+              rounded-[36px]
+              p-7
+              sm:p-10
+              min-h-[330px]
+            "
+          >
+            <div
+              className="
+                absolute
+                -right-16
+                -bottom-20
+                w-64
+                h-64
+                rounded-full
+                bg-[#E86652]
+              "
+            />
 
-        {/* =================================================
-            NAVIGATION
-        ================================================= */}
+            <div
+              className="
+                absolute
+                right-32
+                -top-12
+                w-36
+                h-36
+                rounded-full
+                bg-[#F1BD4A]
+              "
+            />
 
-        <nav className="flex overflow-x-auto gap-2 p-1 bg-zinc-900/70 rounded-2xl border border-zinc-800 mb-7">
+            <div className="relative">
+              <p
+                className="
+                  text-sm
+                  tracking-[0.15em]
+                  uppercase
+                  text-[#D5E0D7]
+                  font-bold
+                "
+              >
+                Active queue
+              </p>
 
-          <NavButton
-            active={tab === "live"}
+              <div
+                className="
+                  mt-5
+                  flex
+                  items-end
+                  gap-5
+                "
+              >
+                <span
+                  className="
+                    text-[92px]
+                    sm:text-[130px]
+                    leading-[.8]
+                    font-black
+                    tracking-[-0.08em]
+                  "
+                >
+                  {
+                    onlineRows.length > 0
+                      ? totalQueue
+                      : "—"
+                  }
+                </span>
+
+                <div className="pb-2 sm:pb-4">
+                  <p className="text-xl font-bold">
+                    people
+                  </p>
+
+                  <p
+                    className="
+                      text-[#BFD0C3]
+                      mt-1
+                    "
+                  >
+                    across active nodes
+                  </p>
+                </div>
+              </div>
+
+              <div
+                className="
+                  mt-8
+                  flex
+                  flex-wrap
+                  gap-3
+                "
+              >
+                <LiveChip
+                  icon={
+                    <Activity size={16} />
+                  }
+                >
+                  {male?.trend ?? "stable"}
+                </LiveChip>
+
+                <LiveChip
+                  icon={
+                    <Gauge size={16} />
+                  }
+                >
+                  {liveThroughput.toFixed(1)}
+                  /min throughput
+                </LiveChip>
+
+                <LiveChip
+                  icon={
+                    <Clock3 size={16} />
+                  }
+                >
+                  {formatWait(liveWait)}
+                </LiveChip>
+              </div>
+            </div>
+          </div>
+
+          <div
+            className="
+              grid
+              sm:grid-cols-2
+              lg:grid-cols-1
+              gap-5
+            "
+          >
+            <CameraCard
+              title="Male queue"
+              subtitle="PoC camera node"
+              online={maleOnline}
+              count={male?.queue_count ?? 0}
+              age={ageSeconds(male, nowMs)}
+              accent="tomato"
+            />
+
+            <CameraCard
+              title="Female queue"
+              subtitle="Second node ready"
+              online={femaleOnline}
+              count={female?.queue_count ?? 0}
+              age={ageSeconds(female, nowMs)}
+              accent="blue"
+              placeholder
+            />
+          </div>
+        </section>
+
+        <nav
+          className="
+            mt-7
+            bg-white
+            border
+            border-[#DED6C7]
+            rounded-[22px]
+            p-1.5
+            flex
+            gap-1
+            overflow-x-auto
+            shadow-[0_7px_0_#E8E0D2]
+          "
+        >
+          <TabButton
+            active={tab === "overview"}
             icon={<Activity size={17} />}
-            label="Live"
-            onClick={() => setTab("live")}
-          />
+            onClick={() => setTab("overview")}
+          >
+            Overview
+          </TabButton>
 
-          <NavButton
-            active={tab === "history"}
-            icon={<History size={17} />}
-            label="History"
-            onClick={() => setTab("history")}
-          />
+          <TabButton
+            active={tab === "analytics"}
+            icon={<BarChart3 size={17} />}
+            onClick={() => setTab("analytics")}
+          >
+            Queue Analytics
+          </TabButton>
 
-          <NavButton
+          <TabButton
             active={tab === "menu"}
-            icon={<MenuIcon size={17} />}
-            label="Menu"
+            icon={<UtensilsCrossed size={17} />}
             onClick={() => setTab("menu")}
-          />
+          >
+            Menu Lab
+          </TabButton>
 
-          <NavButton
+          <TabButton
             active={tab === "validation"}
             icon={<ShieldCheck size={17} />}
-            label="Validation"
             onClick={() => setTab("validation")}
-          />
+          >
+            Validation
+          </TabButton>
 
+          <TabButton
+            active={tab === "system"}
+            icon={<Database size={17} />}
+            onClick={() => setTab("system")}
+          >
+            System
+          </TabButton>
         </nav>
 
+        <section
+          className="
+            mt-5
+            rounded-[22px]
+            bg-[#FFF3CE]
+            border
+            border-[#E9C966]
+            px-5
+            py-4
+            flex
+            gap-3
+            items-start
+          "
+        >
+          <Info
+            size={20}
+            className="shrink-0 mt-0.5"
+          />
 
-        {/* =================================================
-            LIVE TAB
-        ================================================= */}
+          <p
+            className="
+              text-sm
+              leading-relaxed
+            "
+          >
+            <b>Presentation mode:</b>{" "}
+            live camera status and live queue
+            counters come from the actual
+            prototype. Historical queue
+            analytics, menu-side details,
+            acceptance values, and validation
+            observations below are{" "}
+            <b>synthetic demonstration data</b>.
+          </p>
+        </section>
 
-        {tab === "live" && (
-          <div className="space-y-5">
-
-            <section className="grid lg:grid-cols-3 gap-5">
-
-              {/* QUEUE HERO */}
-
-              <div className="lg:col-span-2 rounded-[28px] border border-zinc-800 bg-gradient-to-br from-zinc-900 to-zinc-950 p-7 sm:p-9">
-
-                <div className="flex justify-between items-start">
-
-                  <div>
-                    <p className="text-zinc-500 text-sm">
-                      Current queue
-                    </p>
-
-                    <div className="flex items-end gap-5 mt-3">
-
-                      <span className="text-7xl sm:text-9xl font-black leading-none tracking-tight">
-                        {actuallyOnline
-                          ? status.queue_count
-                          : "—"}
-                      </span>
-
-                      <span className="text-zinc-500 pb-2 sm:pb-3">
-                        people
-                      </span>
-
-                    </div>
-                  </div>
-
-
-                  <Users
-                    size={32}
-                    className="text-zinc-600"
-                  />
-
-                </div>
-
-
-                <div className="mt-7 flex flex-wrap gap-3">
-
-                  <div className="flex items-center gap-2 px-3 py-2 rounded-xl bg-zinc-800/70 capitalize">
-                    {trendIcon}
-                    {status.trend}
-                  </div>
-
-                  <div className="px-3 py-2 rounded-xl bg-zinc-800/70 capitalize">
-                    {status.queue_status}
-                  </div>
-
-                </div>
-
-              </div>
-
-
-              {/* CAMERA STATUS */}
-
-              <div className="rounded-[28px] border border-zinc-800 bg-zinc-900 p-7">
-
-                <div className="flex justify-between">
-
-                  <p className="text-zinc-500">
-                    Camera node
-                  </p>
-
-                  <Camera size={21} />
-                </div>
-
-                <p className="text-2xl font-bold mt-5">
-                  {actuallyOnline
-                    ? "Operational"
-                    : "Offline"}
-                </p>
-
-                <p className="text-zinc-500 text-sm mt-2">
-                  Last heartbeat
-                </p>
-
-                <p className="mt-1">
-                  {Math.round(ageSeconds)} sec ago
-                </p>
-
-
-                <div className="mt-6 pt-5 border-t border-zinc-800">
-
-                  <div className="flex items-center gap-2 text-sm">
-
-                    {actuallyOnline ? (
-                      <>
-                        <Wifi
-                          size={17}
-                          className="text-green-400"
-                        />
-                        <span className="text-green-400">
-                          Connected
-                        </span>
-                      </>
-                    ) : (
-                      <>
-                        <WifiOff
-                          size={17}
-                          className="text-red-400"
-                        />
-                        <span className="text-red-400">
-                          No heartbeat
-                        </span>
-                      </>
-                    )}
-
-                  </div>
-
-                </div>
-
-              </div>
-
-            </section>
-
-
-            {/* METRICS */}
-
-            <section className="grid sm:grid-cols-2 lg:grid-cols-4 gap-4">
-
-              <Metric
-                icon={<Clock3 size={20} />}
-                title="Average wait"
+        {tab === "overview" && (
+          <div className="mt-6 space-y-6">
+            <section
+              className="
+                grid
+                sm:grid-cols-2
+                xl:grid-cols-5
+                gap-4
+              "
+            >
+              <MetricCard
+                icon={<ArrowRight size={21} />}
+                title="Queue entries"
                 value={
-                  actuallyOnline
-                    ? formatWait(status.avg_wait_seconds)
+                  onlineRows.length
+                    ? String(liveEntries)
                     : "—"
                 }
+                color="mustard"
               />
 
-              <Metric
-                icon={<Gauge size={20} />}
+              <MetricCard
+                icon={
+                  <CheckCircle2 size={21} />
+                }
+                title="Service completion"
+                value={
+                  onlineRows.length
+                    ? String(liveServed)
+                    : "—"
+                }
+                color="sage"
+              />
+
+              <MetricCard
+                icon={<X size={21} />}
+                title="Abandonment"
+                value={
+                  onlineRows.length
+                    ? String(liveAbandoned)
+                    : "—"
+                }
+                color="tomato"
+              />
+
+              <MetricCard
+                icon={<Clock3 size={21} />}
+                title="Waiting time"
+                value={
+                  onlineRows.length
+                    ? formatWait(liveWait)
+                    : "—"
+                }
+                color="blue"
+              />
+
+              <MetricCard
+                icon={<Gauge size={21} />}
                 title="Throughput"
                 value={
-                  actuallyOnline
-                    ? `${status.throughput_per_min}/min`
-                    : "—"
+                  onlineRows.length
+                    ?
+                      `${liveThroughput.toFixed(1)}/min`
+                    :
+                      "—"
                 }
+                color="purple"
               />
-
-              <Metric
-                icon={<CheckCircle2 size={20} />}
-                title="Served"
-                value={
-                  actuallyOnline
-                    ? String(status.served)
-                    : "—"
-                }
-              />
-
-              <Metric
-                icon={<Database size={20} />}
-                title="Data age"
-                value={`${Math.round(ageSeconds)} sec`}
-              />
-
             </section>
 
-
-            {/* LIVE GRAPH */}
-
-            <section className="rounded-[28px] border border-zinc-800 bg-zinc-900 p-5 sm:p-7">
-
-              <div className="flex items-center justify-between mb-7">
-
-                <div>
-                  <h2 className="text-xl font-bold">
-                    Live queue activity
-                  </h2>
-
-                  <p className="text-zinc-500 text-sm mt-1">
-                    Browser session · updates every 3 seconds
-                  </p>
-                </div>
-
-                <Activity
-                  size={22}
-                  className="text-zinc-500"
+            <section
+              className="
+                grid
+                xl:grid-cols-[1.35fr_.65fr]
+                gap-5
+              "
+            >
+              <PaperCard>
+                <SectionTitle
+                  eyebrow="Historical session"
+                  title="Queue curve"
+                  icon={<Activity />}
                 />
 
-              </div>
+                {latestCurve.length > 0 ? (
+                  <div className="h-[320px] mt-7">
+                    <ResponsiveContainer
+                      width="100%"
+                      height="100%"
+                    >
+                      <AreaChart data={latestCurve}>
+                        <defs>
+                          <linearGradient
+                            id="queueFill"
+                            x1="0"
+                            y1="0"
+                            x2="0"
+                            y2="1"
+                          >
+                            <stop
+                              offset="0%"
+                              stopColor={COLORS.tomato}
+                              stopOpacity={0.5}
+                            />
+                            <stop
+                              offset="100%"
+                              stopColor={COLORS.tomato}
+                              stopOpacity={0.03}
+                            />
+                          </linearGradient>
+                        </defs>
 
+                        <CartesianGrid
+                          stroke="#E9E2D5"
+                          strokeDasharray="4 4"
+                          vertical={false}
+                        />
 
-              <div className="h-[280px]">
+                        <XAxis
+                          dataKey="recorded_at"
+                          tickFormatter={
+                            (value) =>
+                              new Date(
+                                String(value)
+                              ).toLocaleTimeString(
+                                [],
+                                {
+                                  hour: "2-digit",
+                                  minute: "2-digit",
+                                }
+                              )
+                          }
+                          tickLine={false}
+                          axisLine={false}
+                          stroke="#8E877B"
+                        />
 
+                        <YAxis
+                          allowDecimals={false}
+                          tickLine={false}
+                          axisLine={false}
+                          stroke="#8E877B"
+                        />
+
+                        <Tooltip
+                          labelFormatter={
+                            (value) =>
+                              new Date(
+                                String(value)
+                              ).toLocaleString()
+                          }
+                          contentStyle={tooltipStyle}
+                        />
+
+                        <Area
+                          type="monotone"
+                          dataKey="queue_count"
+                          name="Queue"
+                          stroke={COLORS.tomato}
+                          strokeWidth={3}
+                          fill="url(#queueFill)"
+                          dot={false}
+                        />
+                      </AreaChart>
+                    </ResponsiveContainer>
+                  </div>
+                ) : (
+                  <EmptyState>
+                    No historical queue curve yet.
+                  </EmptyState>
+                )}
+              </PaperCard>
+
+              <PaperCard>
+                <SectionTitle
+                  eyebrow="Latest session"
+                  title={
+                    latestMetric
+                      ?
+                        mealLabel(
+                          latestMetric.meal_period
+                        )
+                      :
+                        "No session"
+                  }
+                  icon={<TrendingUp />}
+                />
+
+                {latestMetric && (
+                  <div className="mt-6 space-y-4">
+                    <MiniStat
+                      label="Peak queue"
+                      value={String(
+                        latestMetric.peak_queue
+                      )}
+                    />
+
+                    <MiniStat
+                      label="Mean queue"
+                      value={
+                        latestMetric.mean_queue.toFixed(1)
+                      }
+                    />
+
+                    <MiniStat
+                      label="Median queue"
+                      value={
+                        latestMetric.median_queue.toFixed(1)
+                      }
+                    />
+
+                    <MiniStat
+                      label="Congestion"
+                      value={
+                        `${latestMetric.congestion_duration_min.toFixed(0)} min`
+                      }
+                    />
+
+                    <MiniStat
+                      label="Queue burden"
+                      value={
+                        `${latestMetric.queue_burden_person_min.toFixed(0)} person-min`
+                      }
+                    />
+                  </div>
+                )}
+              </PaperCard>
+            </section>
+
+            {latestMetric && (
+              <PaperCard>
+                <SectionTitle
+                  eyebrow="Flow"
+                  title="From arrival to meal"
+                  icon={<Users />}
+                />
+
+                <div
+                  className="
+                    mt-7
+                    grid
+                    lg:grid-cols-[1fr_auto_1fr_auto_1fr]
+                    gap-4
+                    items-center
+                  "
+                >
+                  <FlowBox
+                    color="mustard"
+                    value={latestMetric.queue_entry}
+                    label="Queue entry"
+                  />
+
+                  <ArrowRight
+                    className="
+                      hidden
+                      lg:block
+                      text-[#9E978C]
+                    "
+                  />
+
+                  <FlowBox
+                    color="sage"
+                    value={
+                      latestMetric.service_completion
+                    }
+                    label="Service completion"
+                  />
+
+                  <ArrowRight
+                    className="
+                      hidden
+                      lg:block
+                      text-[#9E978C]
+                    "
+                  />
+
+                  <FlowBox
+                    color="blue"
+                    value={latestMetric.meals_served}
+                    label="Meals served"
+                  />
+                </div>
+
+                <div
+                  className="
+                    mt-4
+                    rounded-[18px]
+                    bg-[#FFF0EC]
+                    border
+                    border-[#F4B9AD]
+                    p-4
+                    flex
+                    items-center
+                    justify-between
+                    gap-4
+                  "
+                >
+                  <div
+                    className="
+                      flex
+                      gap-3
+                      items-center
+                    "
+                  >
+                    <X size={19} />
+                    <span className="font-semibold">
+                      Abandoned queue
+                    </span>
+                  </div>
+
+                  <span
+                    className="
+                      text-2xl
+                      font-black
+                    "
+                  >
+                    {latestMetric.abandonment}
+                  </span>
+                </div>
+              </PaperCard>
+            )}
+          </div>
+        )}
+
+        {tab === "analytics" && (
+          <div className="mt-6 space-y-6">
+            <SectionHeading
+              kicker="QUEUE ANALYTICS"
+              title="What actually happened?"
+              description="
+                Session-level metrics derived
+                from queue counts and service
+                events.
+              "
+            />
+
+            {latestMetric && (
+              <section
+                className="
+                  grid
+                  sm:grid-cols-2
+                  lg:grid-cols-3
+                  xl:grid-cols-6
+                  gap-4
+                "
+              >
+                <MetricCard
+                  title="Peak queue"
+                  value={String(
+                    latestMetric.peak_queue
+                  )}
+                  icon={<TrendingUp />}
+                  color="tomato"
+                />
+
+                <MetricCard
+                  title="Mean queue"
+                  value={
+                    latestMetric.mean_queue.toFixed(1)
+                  }
+                  icon={<BarChart3 />}
+                  color="mustard"
+                />
+
+                <MetricCard
+                  title="Median queue"
+                  value={
+                    latestMetric.median_queue.toFixed(1)
+                  }
+                  icon={<Activity />}
+                  color="sage"
+                />
+
+                <MetricCard
+                  title="Congestion"
+                  value={
+                    `${latestMetric.congestion_duration_min.toFixed(0)} min`
+                  }
+                  icon={<Clock3 />}
+                  color="blue"
+                />
+
+                <MetricCard
+                  title="Queue burden"
+                  value={
+                    `${latestMetric.queue_burden_person_min.toFixed(0)}`
+                  }
+                  sub="person-min"
+                  icon={<Users />}
+                  color="purple"
+                />
+
+                <MetricCard
+                  title="Meals served"
+                  value={String(
+                    latestMetric.meals_served
+                  )}
+                  icon={<UtensilsCrossed />}
+                  color="sage"
+                />
+              </section>
+            )}
+
+            <PaperCard>
+              <SectionTitle
+                eyebrow="Across sessions"
+                title="Peak vs mean queue"
+                icon={<BarChart3 />}
+              />
+
+              <div className="h-[390px] mt-7">
                 <ResponsiveContainer
                   width="100%"
                   height="100%"
                 >
-
-                  <LineChart data={liveHistory}>
-
+                  <BarChart data={sessionChart}>
                     <CartesianGrid
-                      strokeDasharray="3 3"
-                      stroke="#27272a"
+                      stroke="#E9E2D5"
+                      strokeDasharray="4 4"
                       vertical={false}
                     />
 
                     <XAxis
-                      dataKey="time"
-                      stroke="#71717a"
+                      dataKey="label"
                       tickLine={false}
                       axisLine={false}
-                      minTickGap={35}
+                      stroke="#8E877B"
                     />
 
                     <YAxis
-                      stroke="#71717a"
                       tickLine={false}
                       axisLine={false}
-                      allowDecimals={false}
-                      width={28}
+                      stroke="#8E877B"
                     />
 
                     <Tooltip
-                      contentStyle={{
-                        background: "#18181b",
-                        border: "1px solid #3f3f46",
-                        borderRadius: "12px",
-                      }}
+                      contentStyle={tooltipStyle}
                     />
 
-                    <Line
-                      type="monotone"
-                      dataKey="count"
-                      stroke="#fafafa"
-                      strokeWidth={3}
-                      dot={false}
-                      isAnimationActive={true}
+                    <Legend />
+
+                    <Bar
+                      dataKey="peak"
+                      name="Peak queue"
+                      fill={COLORS.tomato}
+                      radius={[8, 8, 0, 0]}
                     />
 
-                  </LineChart>
-
+                    <Bar
+                      dataKey="mean"
+                      name="Mean queue"
+                      fill={COLORS.mustard}
+                      radius={[8, 8, 0, 0]}
+                    />
+                  </BarChart>
                 </ResponsiveContainer>
-
               </div>
+            </PaperCard>
 
-            </section>
+            <PaperCard>
+              <SectionTitle
+                eyebrow="Session table"
+                title="Nine meal sessions"
+                icon={<Database />}
+              />
 
+              <div className="overflow-x-auto mt-6">
+                <table
+                  className="
+                    min-w-[1050px]
+                    w-full
+                    text-sm
+                  "
+                >
+                  <thead>
+                    <tr
+                      className="
+                        text-left
+                        text-[#797266]
+                        border-b
+                        border-[#E7DFD1]
+                      "
+                    >
+                      <Th>Session</Th>
+                      <Th>Entry</Th>
+                      <Th>Served</Th>
+                      <Th>Abandoned</Th>
+                      <Th>Wait</Th>
+                      <Th>Peak</Th>
+                      <Th>Mean</Th>
+                      <Th>Median</Th>
+                      <Th>Congestion</Th>
+                      <Th>Burden</Th>
+                    </tr>
+                  </thead>
 
-            {/* PRIVACY */}
+                  <tbody>
+                    {sortedMetrics.map((row) => (
+                      <tr
+                        key={row.session_id}
+                        className="
+                          border-b
+                          border-[#EEE7DB]
+                          last:border-0
+                        "
+                      >
+                        <Td>
+                          <div className="font-bold">
+                            {mealLabel(
+                              row.meal_period
+                            )}
+                          </div>
 
-            <section className="rounded-[24px] border border-zinc-800 bg-zinc-950 p-6">
+                          <div
+                            className="
+                              text-xs
+                              text-[#8C8578]
+                              mt-1
+                            "
+                          >
+                            {formatLongDate(
+                              row.service_date
+                            )}
+                          </div>
+                        </Td>
 
-              <div className="flex gap-4">
-
-                <ShieldCheck
-                  className="text-zinc-400 shrink-0"
-                  size={23}
-                />
-
-                <div>
-                  <h3 className="font-semibold">
-                    Privacy-aware monitoring
-                  </h3>
-
-                  <p className="text-zinc-500 text-sm mt-1 leading-relaxed">
-                    Q-SENSE uses person detection and temporary
-                    multi-object tracking identifiers. Facial
-                    recognition and real-world identity tracking are
-                    not used.
-                  </p>
-                </div>
-
+                        <Td>{row.queue_entry}</Td>
+                        <Td>
+                          {row.service_completion}
+                        </Td>
+                        <Td>{row.abandonment}</Td>
+                        <Td>
+                          {formatWait(
+                            row.avg_wait_seconds
+                          )}
+                        </Td>
+                        <Td>{row.peak_queue}</Td>
+                        <Td>
+                          {row.mean_queue.toFixed(1)}
+                        </Td>
+                        <Td>
+                          {row.median_queue.toFixed(1)}
+                        </Td>
+                        <Td>
+                          {row.congestion_duration_min}m
+                        </Td>
+                        <Td>
+                          {row.queue_burden_person_min.toFixed(0)}
+                        </Td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
               </div>
-
-            </section>
-
+            </PaperCard>
           </div>
         )}
 
+        {tab === "menu" && (
+          <div className="mt-6 space-y-6">
+            <SectionHeading
+              kicker="MENU LAB"
+              title="Does the menu move the queue?"
+              description="
+                Demand is represented as a
+                queue/service proxy. Acceptance
+                values here are synthetic
+                placeholders and are not inferred
+                from camera behavior.
+              "
+            />
 
-        {/* =================================================
-            HISTORY TAB
-        ================================================= */}
-
-        {tab === "history" && (
-          <div className="space-y-5">
-
-            <section className="flex flex-col sm:flex-row justify-between sm:items-center gap-4">
-
-              <div>
-                <h2 className="text-2xl font-bold">
-                  Queue history
-                </h2>
-
-                <p className="text-zinc-500 mt-1">
-                  Recorded research snapshots
-                </p>
-              </div>
-
-
-              <div className="flex gap-2">
-
-                {(["24h", "7d", "30d"] as const).map(
-                  (item) => (
-                    <button
-                      key={item}
-                      onClick={() => setRange(item)}
-                      className={`px-4 py-2 rounded-xl transition ${
-                        range === item
-                          ? "bg-white text-black"
-                          : "bg-zinc-900 border border-zinc-800 text-zinc-400 hover:text-white"
-                      }`}
-                    >
-                      {item}
-                    </button>
-                  )
-                )}
-
-              </div>
-
-            </section>
-
-
-            <section className="grid sm:grid-cols-2 lg:grid-cols-4 gap-4">
-
-              <Metric
-                icon={<Users size={20} />}
-                title="Average queue"
-                value={historyStats.average.toFixed(1)}
-              />
-
-              <Metric
-                icon={<TrendingUp size={20} />}
-                title="Peak queue"
-                value={String(historyStats.peak)}
-              />
-
-              <Metric
-                icon={<Gauge size={20} />}
-                title="Avg throughput"
-                value={`${historyStats.averageThroughput.toFixed(
-                  1
-                )}/min`}
-              />
-
-              <Metric
-                icon={<Database size={20} />}
-                title="Observations"
-                value={String(historyStats.observations)}
-              />
-
-            </section>
-
-
-            <section className="rounded-[28px] border border-zinc-800 bg-zinc-900 p-5 sm:p-7">
-
-              <h3 className="text-xl font-bold">
-                Queue level over time
-              </h3>
-
-
-              {historyChartData.length === 0 ? (
-
-                <EmptyState
-                  text="No research snapshots in this period yet."
+            <section
+              className="
+                grid
+                xl:grid-cols-[.85fr_1.15fr]
+                gap-5
+              "
+            >
+              <PaperCard>
+                <SectionTitle
+                  eyebrow="Demand × acceptance"
+                  title="Menu map"
+                  icon={<Heart />}
                 />
 
-              ) : (
-
-                <div className="h-[400px] mt-6">
-
+                <div className="h-[420px] mt-7">
                   <ResponsiveContainer
                     width="100%"
                     height="100%"
                   >
-
-                    <LineChart
-                      data={historyChartData}
-                    >
-
+                    <ScatterChart>
                       <CartesianGrid
-                        strokeDasharray="3 3"
-                        stroke="#27272a"
-                        vertical={false}
+                        stroke="#E9E2D5"
+                        strokeDasharray="4 4"
                       />
 
                       <XAxis
-                        dataKey="recorded_at"
-                        tickFormatter={(value) =>
-                          new Date(value).toLocaleTimeString(
-                            [],
-                            {
-                              hour: "2-digit",
-                              minute: "2-digit",
-                            }
-                          )
-                        }
-                        stroke="#71717a"
+                        type="number"
+                        dataKey="menu_demand_index"
+                        name="Demand"
+                        domain={[60, 100]}
                         tickLine={false}
                         axisLine={false}
-                        minTickGap={45}
+                        stroke="#8E877B"
                       />
 
                       <YAxis
-                        allowDecimals={false}
-                        stroke="#71717a"
+                        type="number"
+                        dataKey="menu_acceptance_index"
+                        name="Acceptance"
+                        domain={[70, 100]}
                         tickLine={false}
                         axisLine={false}
+                        stroke="#8E877B"
+                      />
+
+                      <ZAxis range={[100, 400]} />
+
+                      <Tooltip
+                        cursor={{
+                          strokeDasharray: "4 4",
+                        }}
+                        content={<MenuTooltip />}
+                      />
+
+                      <Scatter
+                        name="Menu"
+                        data={menuMetricData}
+                        fill={COLORS.tomato}
+                      />
+                    </ScatterChart>
+                  </ResponsiveContainer>
+                </div>
+              </PaperCard>
+
+              <div
+                className="
+                  grid
+                  sm:grid-cols-2
+                  gap-4
+                "
+              >
+                {menuMetricData.map((row) => (
+                  <MenuCard
+                    key={row.session_id}
+                    row={row}
+                    meal={row.meal}
+                  />
+                ))}
+              </div>
+            </section>
+          </div>
+        )}
+
+        {tab === "validation" && (
+          <div className="mt-6 space-y-6">
+            <SectionHeading
+              kicker="VALIDATION"
+              title="How close is Q-SENSE to manual counting?"
+              description="
+                This presentation dataset uses
+                48 synthetic paired observations,
+                including outside meal hours, to
+                demonstrate the planned validation
+                workflow.
+              "
+            />
+
+            {validationStats && (
+              <section
+                className="
+                  grid
+                  sm:grid-cols-2
+                  lg:grid-cols-3
+                  xl:grid-cols-6
+                  gap-4
+                "
+              >
+                <MetricCard
+                  title="Observations"
+                  value={String(
+                    validationStats.n
+                  )}
+                  icon={<Database />}
+                  color="mustard"
+                />
+
+                <MetricCard
+                  title="MAE"
+                  value={
+                    validationStats.mae.toFixed(2)
+                  }
+                  sub="people"
+                  icon={<BarChart3 />}
+                  color="sage"
+                />
+
+                <MetricCard
+                  title="RMSE"
+                  value={
+                    validationStats.rmse.toFixed(2)
+                  }
+                  sub="people"
+                  icon={<Activity />}
+                  color="blue"
+                />
+
+                <MetricCard
+                  title="Mean bias"
+                  value={
+                    validationStats.bias.toFixed(2)
+                  }
+                  icon={<TrendingUp />}
+                  color="purple"
+                />
+
+                <MetricCard
+                  title="Exact"
+                  value={
+                    `${validationStats.exact.toFixed(1)}%`
+                  }
+                  icon={<Check />}
+                  color="sage"
+                />
+
+                <MetricCard
+                  title="Within ±1"
+                  value={
+                    `${validationStats.withinOne.toFixed(1)}%`
+                  }
+                  icon={<ShieldCheck />}
+                  color="tomato"
+                />
+              </section>
+            )}
+
+            <section
+              className="
+                grid
+                xl:grid-cols-[1.1fr_.9fr]
+                gap-5
+              "
+            >
+              <PaperCard>
+                <SectionTitle
+                  eyebrow="Paired counts"
+                  title="Manual vs Q-SENSE"
+                  icon={<ShieldCheck />}
+                />
+
+                <div className="h-[430px] mt-7">
+                  <ResponsiveContainer
+                    width="100%"
+                    height="100%"
+                  >
+                    <ScatterChart>
+                      <CartesianGrid
+                        stroke="#E9E2D5"
+                        strokeDasharray="4 4"
+                      />
+
+                      <XAxis
+                        type="number"
+                        dataKey="actual"
+                        name="Manual"
+                        domain={[0, 20]}
+                        allowDecimals={false}
+                        stroke="#8E877B"
+                      />
+
+                      <YAxis
+                        type="number"
+                        dataKey="predicted"
+                        name="Q-SENSE"
+                        domain={[0, 20]}
+                        allowDecimals={false}
+                        stroke="#8E877B"
                       />
 
                       <Tooltip
-			labelFormatter={(value) =>
-			  new Date(String(value)).toLocaleString()
-			}
-                        contentStyle={{
-                          background: "#18181b",
-                          border:
-                            "1px solid #3f3f46",
-                          borderRadius: "12px",
-                        }}
+                        contentStyle={tooltipStyle}
                       />
 
-                      <Line
-                        type="monotone"
-                        dataKey="queue_count"
-                        name="Queue"
-                        stroke="#fafafa"
-                        strokeWidth={2.5}
-                        dot={false}
+                      <ReferenceLine
+                        segment={[
+                          { x: 0, y: 0 },
+                          { x: 20, y: 20 },
+                        ]}
+                        stroke={COLORS.sage}
+                        strokeWidth={2}
+                        strokeDasharray="5 5"
                       />
 
-                    </LineChart>
-
+                      <Scatter
+                        data={validationScatter}
+                        fill={COLORS.blue}
+                      />
+                    </ScatterChart>
                   </ResponsiveContainer>
-
                 </div>
-
-              )}
-
-            </section>
-
-          </div>
-        )}
-
-
-        {/* =================================================
-            MENU TAB
-        ================================================= */}
-
-        {tab === "menu" && (
-          <div className="space-y-5">
-
-            <div>
-              <h2 className="text-2xl font-bold">
-                Cafeteria menu
-              </h2>
-
-              <p className="text-zinc-500 mt-1">
-                Menu records can later be compared against queue
-                patterns.
-              </p>
-            </div>
-
-
-            {latestMeal ? (
-
-              <>
-                <section className="rounded-[28px] border border-zinc-800 bg-zinc-900 p-7">
-
-                  <div className="flex flex-col sm:flex-row sm:justify-between gap-4 mb-7">
-
-                    <div>
-                      <p className="text-zinc-500 text-sm">
-                        Latest recorded menu
-                      </p>
-
-                      <h3 className="text-2xl font-bold capitalize mt-1">
-                        {latestMeal.meal_period}
-                      </h3>
-                    </div>
-
-                    <div className="text-zinc-400">
-                      {latestMeal.meal_date}
-                    </div>
-
-                  </div>
-
-
-                  <div className="grid sm:grid-cols-2 lg:grid-cols-4 gap-4">
-
-                    <FoodItem
-                      title="Staple"
-                      value={latestMeal.staple}
-                    />
-
-                    <FoodItem
-                      title="Animal protein"
-                      value={latestMeal.animal_protein}
-                    />
-
-                    <FoodItem
-                      title="Plant protein"
-                      value={latestMeal.plant_protein}
-                    />
-
-                    <FoodItem
-                      title="Vegetable"
-                      value={latestMeal.vegetable}
-                    />
-
-                    <FoodItem
-                      title="Fruit"
-                      value={latestMeal.fruit}
-                    />
-
-                    <FoodItem
-                      title="Drink"
-                      value={latestMeal.drink}
-                    />
-
-                    <FoodItem
-                      title="Other"
-                      value={latestMeal.other}
-                    />
-
-                  </div>
-
-                </section>
-
-
-                <section className="rounded-[28px] border border-zinc-800 overflow-hidden">
-
-                  <div className="p-6 bg-zinc-900">
-                    <h3 className="font-bold">
-                      Recent meal records
-                    </h3>
-                  </div>
-
-
-                  <div className="divide-y divide-zinc-800">
-
-                    {meals.slice(0, 8).map((meal) => (
-
-                      <div
-                        key={meal.id}
-                        className="p-5 flex justify-between items-center bg-zinc-950 hover:bg-zinc-900 transition"
-                      >
-
-                        <div>
-
-                          <p className="font-medium capitalize">
-                            {meal.meal_period}
-                          </p>
-
-                          <p className="text-zinc-500 text-sm mt-1">
-                            {[
-                              meal.staple,
-                              meal.animal_protein,
-                            ]
-                              .filter(Boolean)
-                              .join(" · ")}
-                          </p>
-
-                        </div>
-
-
-                        <div className="flex items-center gap-3 text-zinc-500">
-
-                          <span className="text-sm">
-                            {meal.meal_date}
-                          </span>
-
-                          <ChevronRight size={17} />
-
-                        </div>
-
-                      </div>
-
-                    ))}
-
-                  </div>
-
-                </section>
-
-              </>
-
-            ) : (
-
-              <EmptyState
-                text="No menu records have been entered yet."
-              />
-
-            )}
-
-          </div>
-        )}
-
-
-        {/* =================================================
-            VALIDATION TAB
-        ================================================= */}
-
-        {tab === "validation" && (
-          <div className="space-y-5">
-
-            <div>
-              <h2 className="text-2xl font-bold">
-                System validation
-              </h2>
-
-              <p className="text-zinc-500 mt-1">
-                Comparison between manual observations and
-                Q-SENSE counts.
-              </p>
-            </div>
-
-
-            {validationStats ? (
-
-              <>
-
-                <section className="grid sm:grid-cols-2 lg:grid-cols-3 gap-4">
-
-                  <Metric
-                    title="Validation observations"
-                    value={String(validationStats.n)}
-                    icon={<Database size={20} />}
-                  />
-
-                  <Metric
-                    title="MAE"
-                    value={`${validationStats.mae.toFixed(
-                      2
-                    )} people`}
-                    icon={<BarChart3 size={20} />}
-                  />
-
-                  <Metric
-                    title="RMSE"
-                    value={`${validationStats.rmse.toFixed(
-                      2
-                    )} people`}
-                    icon={<BarChart3 size={20} />}
-                  />
-
-                  <Metric
-                    title="Mean bias"
-                    value={validationStats.bias.toFixed(2)}
-                    icon={<Activity size={20} />}
-                  />
-
-                  <Metric
-                    title="Exact agreement"
-                    value={`${validationStats.exact.toFixed(
-                      1
-                    )}%`}
-                    icon={<CheckCircle2 size={20} />}
-                  />
-
-                  <Metric
-                    title="Within ±1 person"
-                    value={`${validationStats.withinOne.toFixed(
-                      1
-                    )}%`}
-                    icon={<ShieldCheck size={20} />}
-                  />
-
-                </section>
-
-
-                <section className="rounded-[28px] border border-zinc-800 bg-zinc-900 p-6">
-
-                  <div className="flex gap-4">
-
-                    <Info
-                      size={23}
-                      className="text-zinc-400 shrink-0"
-                    />
-
-                    <p className="text-zinc-400 leading-relaxed">
-                      Validation statistics are calculated directly
-                      from manually recorded actual queue counts and
-                      the corresponding Q-SENSE estimates. MAE and
-                      RMSE are reported in people rather than
-                      percentage error so zero-person queues remain
-                      valid observations.
-                    </p>
-
-                  </div>
-
-                </section>
-
-              </>
-
-            ) : (
-
-              <section className="rounded-[28px] border border-zinc-800 bg-zinc-900 p-8">
-
-                <ShieldCheck
-                  size={35}
-                  className="text-zinc-500"
+              </PaperCard>
+
+              <PaperCard>
+                <SectionTitle
+                  eyebrow="Validation design"
+                  title="Coverage"
+                  icon={<Database />}
                 />
 
-                <h3 className="text-xl font-bold mt-5">
-                  Field validation not available yet
-                </h3>
+                {validationStats && (
+                  <div className="mt-7 space-y-4">
+                    <ValidationRow
+                      label="Meal-period observations"
+                      value={validationStats.mealN}
+                      color={COLORS.tomato}
+                    />
 
-                <p className="text-zinc-500 mt-2 max-w-xl">
-                  This is expected during the proof-of-concept
-                  stage. Once manual observations are entered,
-                  Q-SENSE will calculate MAE, RMSE, bias and
-                  agreement automatically.
-                </p>
+                    <ValidationRow
+                      label="Outside-meal observations"
+                      value={validationStats.outsideN}
+                      color={COLORS.blue}
+                    />
 
-              </section>
+                    <div
+                      className="
+                        mt-6
+                        p-5
+                        rounded-[20px]
+                        bg-[#EFF6F0]
+                        border
+                        border-[#C8DDCE]
+                      "
+                    >
+                      <p className="font-bold">
+                        Why MAE and RMSE?
+                      </p>
 
-            )}
-
+                      <p
+                        className="
+                          text-sm
+                          text-[#65756C]
+                          mt-2
+                          leading-relaxed
+                        "
+                      >
+                        They remain interpretable
+                        when the true queue is zero,
+                        unlike percentage error.
+                      </p>
+                    </div>
+                  </div>
+                )}
+              </PaperCard>
+            </section>
           </div>
         )}
 
+        {tab === "system" && (
+          <div className="mt-6 space-y-6">
+            <SectionHeading
+              kicker="SYSTEM"
+              title="From camera to cafeteria insight"
+              description="
+                Q-SENSE publishes derived queue
+                metrics to the public dashboard;
+                it does not need to publish the
+                live video feed.
+              "
+            />
 
-        {/* =================================================
-            FOOTER
-        ================================================= */}
+            <section
+              className="
+                grid
+                lg:grid-cols-4
+                gap-4
+              "
+            >
+              <ArchitectureCard
+                number="01"
+                icon={<Camera />}
+                title="Camera node"
+                text="
+                  ESP32-S3 N16R8 + OV5640
+                  captures the queue view.
+                "
+                color="tomato"
+              />
 
-        <footer className="mt-12 pt-6 border-t border-zinc-900 flex flex-col sm:flex-row justify-between gap-3 text-xs text-zinc-600">
+              <ArchitectureCard
+                number="02"
+                icon={<Activity />}
+                title="Queue engine"
+                text="
+                  YOLO detects people and
+                  ByteTrack assigns temporary
+                  movement IDs.
+                "
+                color="mustard"
+              />
 
+              <ArchitectureCard
+                number="03"
+                icon={<Database />}
+                title="Supabase"
+                text="
+                  Stores live counts, sessions,
+                  menus, and validation metrics.
+                "
+                color="sage"
+              />
+
+              <ArchitectureCard
+                number="04"
+                icon={<Radio />}
+                title="Public dashboard"
+                text="
+                  Next.js on Vercel shows the
+                  live and historical analytics.
+                "
+                color="blue"
+              />
+            </section>
+
+            <section
+              className="
+                grid
+                xl:grid-cols-2
+                gap-5
+              "
+            >
+              <PaperCard>
+                <SectionTitle
+                  eyebrow="Privacy"
+                  title="What Q-SENSE does not do"
+                  icon={<ShieldCheck />}
+                />
+
+                <div
+                  className="
+                    mt-6
+                    grid
+                    sm:grid-cols-2
+                    gap-3
+                  "
+                >
+                  <PrivacyItem>
+                    No facial recognition
+                  </PrivacyItem>
+
+                  <PrivacyItem>
+                    No student names
+                  </PrivacyItem>
+
+                  <PrivacyItem>
+                    Temporary tracking IDs
+                  </PrivacyItem>
+
+                  <PrivacyItem>
+                    Public dashboard uses
+                    metrics, not identities
+                  </PrivacyItem>
+                </div>
+              </PaperCard>
+
+              <PaperCard>
+                <SectionTitle
+                  eyebrow="Scale-up"
+                  title="Two physical queues"
+                  icon={<Users />}
+                />
+
+                <div
+                  className="
+                    mt-6
+                    grid
+                    sm:grid-cols-2
+                    gap-4
+                  "
+                >
+                  <NodeBox
+                    title="Male node"
+                    online={maleOnline}
+                    subtitle="Physical PoC camera"
+                  />
+
+                  <NodeBox
+                    title="Female node"
+                    online={femaleOnline}
+                    subtitle="
+                      Database and UI ready;
+                      camera not installed yet.
+                    "
+                  />
+                </div>
+              </PaperCard>
+            </section>
+
+            <PaperCard>
+              <SectionTitle
+                eyebrow="Metric dictionary"
+                title="What the system measures"
+                icon={<Database />}
+              />
+
+              <div
+                className="
+                  mt-6
+                  grid
+                  sm:grid-cols-2
+                  lg:grid-cols-3
+                  gap-3
+                "
+              >
+                {[
+                  [
+                    "Queue count",
+                    "People currently inside the calibrated queue zone.",
+                  ],
+                  [
+                    "Queue entry",
+                    "Confirmed entry into the queue zone.",
+                  ],
+                  [
+                    "Service completion",
+                    "A queued track crosses the calibrated service line toward the served side.",
+                  ],
+                  [
+                    "Abandonment",
+                    "A confirmed queued track leaves without crossing the service line.",
+                  ],
+                  [
+                    "Waiting time",
+                    "Time from confirmed queue entry to service completion.",
+                  ],
+                  [
+                    "Throughput",
+                    "Service completions per minute.",
+                  ],
+                  [
+                    "Peak queue",
+                    "Maximum queue count observed in a session.",
+                  ],
+                  [
+                    "Mean queue",
+                    "Average queue count across a session.",
+                  ],
+                  [
+                    "Median queue",
+                    "Median queue count across a session.",
+                  ],
+                  [
+                    "Congestion duration",
+                    "Time spent above a chosen queue threshold.",
+                  ],
+                  [
+                    "Queue burden",
+                    "Area under the queue curve in person-minutes.",
+                  ],
+                  [
+                    "Meals served",
+                    "Service-completion count used as a proxy for meals collected.",
+                  ],
+                  [
+                    "Menu demand",
+                    "Relative queue/service demand associated with a menu session.",
+                  ],
+                  [
+                    "Menu acceptance",
+                    "Requires independent acceptance evidence; the current values are synthetic placeholders.",
+                  ],
+                ].map(([title, text]) => (
+                  <DefinitionCard
+                    key={title}
+                    title={title}
+                    text={text}
+                  />
+                ))}
+              </div>
+            </PaperCard>
+          </div>
+        )}
+
+        <footer
+          className="
+            mt-12
+            pt-6
+            pb-3
+            border-t
+            border-[#DED6C7]
+            flex
+            flex-col
+            sm:flex-row
+            justify-between
+            gap-3
+            text-xs
+            text-[#837B6F]
+          "
+        >
           <span>
-            Q-SENSE · Proof of Concept
+            Q-SENSE · Queue Sensing &
+            Evaluation System
           </span>
 
           <span>
-            Anonymous queue analytics · No facial recognition
+            Proof of Concept · 2026
           </span>
-
         </footer>
-
       </div>
     </main>
   );
 }
 
-
-/* =========================================================
-   COMPONENTS
-========================================================= */
-
-function NavButton({
-  active,
-  icon,
-  label,
-  onClick,
+function Badge({
+  children,
+  color,
 }: {
-  active: boolean;
-  icon: React.ReactNode;
-  label: string;
-  onClick: () => void;
+  children: ReactNode;
+  color:
+    | "tomato"
+    | "sage"
+    | "mustard";
 }) {
+  const styles = {
+    tomato:
+      "bg-[#FFF0EC] border-[#F4B9AD]",
+    sage:
+      "bg-[#EEF6EF] border-[#BCD5C3]",
+    mustard:
+      "bg-[#FFF4D2] border-[#EBCF76]",
+  };
+
   return (
-    <button
-      onClick={onClick}
-      className={`flex items-center gap-2 px-4 py-2.5 rounded-xl whitespace-nowrap transition ${
-        active
-          ? "bg-white text-black"
-          : "text-zinc-400 hover:text-white hover:bg-zinc-800"
-      }`}
+    <span
+      className={`
+        px-3
+        py-1.5
+        rounded-full
+        border
+        text-[11px]
+        font-black
+        tracking-[0.08em]
+        ${styles[color]}
+      `}
     >
-      {icon}
-      {label}
-    </button>
+      {children}
+    </span>
   );
 }
 
-
-function StatusPill({
+function SystemStatus({
   online,
 }: {
   online: boolean;
 }) {
   return (
     <div
-      className={`flex items-center gap-2 px-4 py-2 rounded-full border text-sm ${
-        online
-          ? "border-green-900 bg-green-500/10 text-green-400"
-          : "border-red-900 bg-red-500/10 text-red-400"
-      }`}
+      className={`
+        px-4
+        py-2.5
+        rounded-full
+        border
+        flex
+        items-center
+        gap-2
+        text-sm
+        font-bold
+        ${
+          online
+            ?
+              "bg-[#EEF6EF] border-[#BBD5C3] text-[#356447]"
+            :
+              "bg-[#FFF0EC] border-[#F4B9AD] text-[#A84134]"
+        }
+      `}
     >
       <span
-        className={`w-2 h-2 rounded-full ${
-          online
-            ? "bg-green-400 animate-pulse"
-            : "bg-red-400"
-        }`}
+        className={`
+          w-2
+          h-2
+          rounded-full
+          ${
+            online
+              ?
+                "bg-[#4D9362] animate-pulse"
+              :
+                "bg-[#D95B49]"
+          }
+        `}
       />
 
-      {online
-        ? "SYSTEM ONLINE"
-        : "SYSTEM OFFLINE"}
+      {
+        online
+          ? "SYSTEM ONLINE"
+          : "SYSTEM OFFLINE"
+      }
     </div>
   );
 }
 
+function CameraCard({
+  title,
+  subtitle,
+  online,
+  count,
+  age,
+  accent,
+  placeholder = false,
+}: {
+  title: string;
+  subtitle: string;
+  online: boolean;
+  count: number;
+  age: number;
+  accent: "tomato" | "blue";
+  placeholder?: boolean;
+}) {
+  const stripe =
+    accent === "tomato"
+      ? "bg-[#E86652]"
+      : "bg-[#5E87A4]";
 
-function Metric({
+  return (
+    <div
+      className="
+        bg-white
+        border
+        border-[#DED6C7]
+        rounded-[30px]
+        p-6
+        relative
+        overflow-hidden
+        shadow-[0_7px_0_#E8E0D2]
+      "
+    >
+      <div
+        className={`
+          absolute
+          left-0
+          top-0
+          bottom-0
+          w-2
+          ${stripe}
+        `}
+      />
+
+      <div
+        className="
+          flex
+          justify-between
+          gap-4
+        "
+      >
+        <div>
+          <p
+            className="
+              text-sm
+              text-[#7B7468]
+            "
+          >
+            {subtitle}
+          </p>
+
+          <h3
+            className="
+              text-xl
+              font-black
+              mt-1
+            "
+          >
+            {title}
+          </h3>
+        </div>
+
+        {
+          online
+            ?
+              <Wifi className="text-[#4D9362]" />
+            :
+              <WifiOff className="text-[#B7AFA3]" />
+        }
+      </div>
+
+      <div
+        className="
+          mt-6
+          flex
+          items-end
+          justify-between
+        "
+      >
+        <div>
+          <p
+            className="
+              text-5xl
+              font-black
+              tracking-[-0.05em]
+            "
+          >
+            {online ? count : "—"}
+          </p>
+
+          <p
+            className="
+              text-sm
+              text-[#81796E]
+            "
+          >
+            {
+              online
+                ?
+                  "people queued"
+                :
+                  placeholder
+                    ?
+                      "not installed"
+                    :
+                      "offline"
+            }
+          </p>
+        </div>
+
+        <div
+          className="
+            text-right
+            text-xs
+            text-[#8D8579]
+          "
+        >
+          {online ? (
+            <>
+              <p>heartbeat</p>
+              <b>{Math.round(age)}s ago</b>
+            </>
+          ) : (
+            <b>OFFLINE</b>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function LiveChip({
   icon,
+  children,
+}: {
+  icon: ReactNode;
+  children: ReactNode;
+}) {
+  return (
+    <div
+      className="
+        bg-white/10
+        border
+        border-white/15
+        rounded-full
+        px-3.5
+        py-2
+        flex
+        items-center
+        gap-2
+        text-sm
+        capitalize
+      "
+    >
+      {icon}
+      {children}
+    </div>
+  );
+}
+
+function TabButton({
+  active,
+  icon,
+  children,
+  onClick,
+}: {
+  active: boolean;
+  icon: ReactNode;
+  children: ReactNode;
+  onClick: () => void;
+}) {
+  return (
+    <button
+      onClick={onClick}
+      className={`
+        px-4
+        py-2.5
+        rounded-[16px]
+        flex
+        items-center
+        gap-2
+        whitespace-nowrap
+        font-bold
+        text-sm
+        transition
+        ${
+          active
+            ?
+              "bg-[#18352B] text-white"
+            :
+              "hover:bg-[#F2ECE1] text-[#625D54]"
+        }
+      `}
+    >
+      {icon}
+      {children}
+    </button>
+  );
+}
+
+function PaperCard({
+  children,
+}: {
+  children: ReactNode;
+}) {
+  return (
+    <section
+      className="
+        bg-white
+        border
+        border-[#DED6C7]
+        rounded-[30px]
+        p-5
+        sm:p-7
+        shadow-[0_7px_0_#E8E0D2]
+      "
+    >
+      {children}
+    </section>
+  );
+}
+
+function MetricCard({
   title,
   value,
+  icon,
+  color,
+  sub,
 }: {
-  icon: React.ReactNode;
   title: string;
+  value: string;
+  icon: ReactNode;
+  color:
+    | "tomato"
+    | "mustard"
+    | "sage"
+    | "blue"
+    | "purple";
+  sub?: string;
+}) {
+  const colors = {
+    tomato:
+      "bg-[#FFF0EC] border-[#F4B9AD]",
+    mustard:
+      "bg-[#FFF4D2] border-[#EACD72]",
+    sage:
+      "bg-[#EFF6F0] border-[#BED6C4]",
+    blue:
+      "bg-[#EEF4F7] border-[#C3D4DE]",
+    purple:
+      "bg-[#F4EFF6] border-[#D8C7DF]",
+  };
+
+  return (
+    <div
+      className={`
+        rounded-[24px]
+        border
+        p-5
+        ${colors[color]}
+      `}
+    >
+      <div
+        className="
+          flex
+          items-center
+          justify-between
+          gap-3
+        "
+      >
+        <p
+          className="
+            text-sm
+            font-bold
+            text-[#6C665C]
+          "
+        >
+          {title}
+        </p>
+
+        {icon}
+      </div>
+
+      <p
+        className="
+          text-3xl
+          font-black
+          tracking-[-0.04em]
+          mt-5
+        "
+      >
+        {value}
+      </p>
+
+      {sub && (
+        <p
+          className="
+            text-xs
+            text-[#7B7468]
+            mt-1
+          "
+        >
+          {sub}
+        </p>
+      )}
+    </div>
+  );
+}
+
+function SectionTitle({
+  eyebrow,
+  title,
+  icon,
+}: {
+  eyebrow: string;
+  title: string;
+  icon: ReactNode;
+}) {
+  return (
+    <div
+      className="
+        flex
+        justify-between
+        items-start
+        gap-4
+      "
+    >
+      <div>
+        <p
+          className="
+            text-xs
+            tracking-[0.14em]
+            font-black
+            text-[#928A7E]
+          "
+        >
+          {eyebrow.toUpperCase()}
+        </p>
+
+        <h2
+          className="
+            text-2xl
+            sm:text-3xl
+            font-black
+            tracking-[-0.03em]
+            mt-1
+          "
+        >
+          {title}
+        </h2>
+      </div>
+
+      <div
+        className="
+          w-11
+          h-11
+          rounded-[16px]
+          bg-[#F2ECE1]
+          flex
+          items-center
+          justify-center
+        "
+      >
+        {icon}
+      </div>
+    </div>
+  );
+}
+
+function SectionHeading({
+  kicker,
+  title,
+  description,
+}: {
+  kicker: string;
+  title: string;
+  description: string;
+}) {
+  return (
+    <div className="max-w-3xl">
+      <p
+        className="
+          text-xs
+          tracking-[0.14em]
+          font-black
+          text-[#E86652]
+        "
+      >
+        {kicker}
+      </p>
+
+      <h2
+        className="
+          text-3xl
+          sm:text-5xl
+          font-black
+          tracking-[-0.05em]
+          mt-2
+        "
+      >
+        {title}
+      </h2>
+
+      <p
+        className="
+          text-[#726B60]
+          mt-3
+          leading-relaxed
+        "
+      >
+        {description}
+      </p>
+    </div>
+  );
+}
+
+function MiniStat({
+  label,
+  value,
+}: {
+  label: string;
   value: string;
 }) {
   return (
-    <div className="rounded-[24px] border border-zinc-800 bg-zinc-900 p-5">
+    <div
+      className="
+        flex
+        justify-between
+        gap-5
+        py-3
+        border-b
+        border-[#EEE7DB]
+        last:border-0
+      "
+    >
+      <span className="text-[#746D62]">
+        {label}
+      </span>
 
-      <div className="flex justify-between text-zinc-500">
-        <span className="text-sm">
-          {title}
+      <b>{value}</b>
+    </div>
+  );
+}
+
+function FlowBox({
+  color,
+  value,
+  label,
+}: {
+  color:
+    | "mustard"
+    | "sage"
+    | "blue";
+  value: number;
+  label: string;
+}) {
+  const colors = {
+    mustard:
+      "bg-[#FFF4D2] border-[#EACD72]",
+    sage:
+      "bg-[#EFF6F0] border-[#BED6C4]",
+    blue:
+      "bg-[#EEF4F7] border-[#C3D4DE]",
+  };
+
+  return (
+    <div
+      className={`
+        rounded-[22px]
+        border
+        p-6
+        text-center
+        ${colors[color]}
+      `}
+    >
+      <p className="text-4xl font-black">
+        {value}
+      </p>
+
+      <p
+        className="
+          text-sm
+          font-bold
+          text-[#6E675D]
+          mt-1
+        "
+      >
+        {label}
+      </p>
+    </div>
+  );
+}
+
+function MenuCard({
+  row,
+  meal,
+}: {
+  row: SessionMetric & {
+    main_dish: string;
+    meal?: Meal;
+  };
+  meal?: Meal;
+}) {
+  return (
+    <article
+      className="
+        bg-white
+        border
+        border-[#DED6C7]
+        rounded-[26px]
+        p-5
+        shadow-[0_6px_0_#E8E0D2]
+      "
+    >
+      <div
+        className="
+          flex
+          justify-between
+          gap-4
+        "
+      >
+        <div>
+          <p
+            className="
+              text-xs
+              font-black
+              tracking-[0.1em]
+              text-[#91897D]
+            "
+          >
+            {formatShortDate(
+              row.service_date
+            )}
+            {" · "}
+            {mealLabel(
+              row.meal_period
+            ).toUpperCase()}
+          </p>
+
+          <h3
+            className="
+              text-xl
+              font-black
+              mt-2
+            "
+          >
+            {row.main_dish}
+          </h3>
+        </div>
+
+        <div
+          className="
+            w-11
+            h-11
+            rounded-[16px]
+            bg-[#FFF4D2]
+            flex
+            items-center
+            justify-center
+          "
+        >
+          <UtensilsCrossed size={20} />
+        </div>
+      </div>
+
+      <div
+        className="
+          grid
+          grid-cols-2
+          gap-3
+          mt-5
+        "
+      >
+        <ScoreBox
+          label="Demand"
+          value={row.menu_demand_index}
+          color={COLORS.tomato}
+        />
+
+        <ScoreBox
+          label="Demo acceptance"
+          value={row.menu_acceptance_index}
+          color={COLORS.sage}
+        />
+      </div>
+
+      <div
+        className="
+          mt-5
+          text-xs
+          text-[#7D756A]
+          leading-relaxed
+        "
+      >
+        {meal && (
+          <>
+            <p>
+              <b>Carb:</b>{" "}
+              {meal.staple}
+            </p>
+
+            <p>
+              <b>Animal:</b>{" "}
+              {meal.animal_protein}
+            </p>
+
+            <p>
+              <b>Vegetable:</b>{" "}
+              {meal.vegetable}
+            </p>
+
+            <p>
+              <b>Fruit:</b>{" "}
+              {meal.fruit}
+            </p>
+          </>
+        )}
+      </div>
+    </article>
+  );
+}
+
+function ScoreBox({
+  label,
+  value,
+  color,
+}: {
+  label: string;
+  value: number;
+  color: string;
+}) {
+  return (
+    <div
+      className="
+        rounded-[18px]
+        bg-[#FBF7EE]
+        border
+        border-[#E8E0D3]
+        p-3
+      "
+    >
+      <p
+        className="
+          text-xs
+          text-[#7B7468]
+        "
+      >
+        {label}
+      </p>
+
+      <div
+        className="
+          flex
+          items-end
+          gap-1
+          mt-1
+        "
+      >
+        <p className="text-2xl font-black">
+          {value}
+        </p>
+
+        <span
+          className="
+            text-xs
+            mb-1
+            text-[#81796E]
+          "
+        >
+          /100
+        </span>
+      </div>
+
+      <div
+        className="
+          h-2
+          rounded-full
+          bg-[#E8E0D3]
+          overflow-hidden
+          mt-3
+        "
+      >
+        <div
+          className="
+            h-full
+            rounded-full
+          "
+          style={{
+            width: `${value}%`,
+            backgroundColor: color,
+          }}
+        />
+      </div>
+    </div>
+  );
+}
+
+function MenuTooltip({
+  active,
+  payload,
+}: {
+  active?: boolean;
+  payload?: Array<{
+    payload?: {
+      main_dish?: string;
+      menu_demand_index?: number;
+      menu_acceptance_index?: number;
+    };
+  }>;
+}) {
+  if (!active || !payload?.length) {
+    return null;
+  }
+
+  const data = payload[0]?.payload;
+
+  return (
+    <div
+      className="
+        bg-white
+        border
+        border-[#DED6C7]
+        rounded-[16px]
+        p-3
+        shadow-xl
+        text-sm
+      "
+    >
+      <b>{data?.main_dish}</b>
+
+      <p className="mt-1 text-[#716A60]">
+        Demand: {data?.menu_demand_index}
+      </p>
+
+      <p className="text-[#716A60]">
+        Demo acceptance:{" "}
+        {data?.menu_acceptance_index}
+      </p>
+    </div>
+  );
+}
+
+function ValidationRow({
+  label,
+  value,
+  color,
+}: {
+  label: string;
+  value: number;
+  color: string;
+}) {
+  return (
+    <div>
+      <div
+        className="
+          flex
+          justify-between
+          gap-4
+        "
+      >
+        <span>{label}</span>
+        <b>{value}</b>
+      </div>
+
+      <div
+        className="
+          h-3
+          rounded-full
+          bg-[#EEE7DB]
+          overflow-hidden
+          mt-2
+        "
+      >
+        <div
+          className="
+            h-full
+            rounded-full
+          "
+          style={{
+            width:
+              `${Math.min(100, value * 2)}%`,
+            backgroundColor: color,
+          }}
+        />
+      </div>
+    </div>
+  );
+}
+
+function ArchitectureCard({
+  number,
+  icon,
+  title,
+  text,
+  color,
+}: {
+  number: string;
+  icon: ReactNode;
+  title: string;
+  text: string;
+  color:
+    | "tomato"
+    | "mustard"
+    | "sage"
+    | "blue";
+}) {
+  const colors = {
+    tomato:
+      "bg-[#FFF0EC] border-[#F4B9AD]",
+    mustard:
+      "bg-[#FFF4D2] border-[#EACD72]",
+    sage:
+      "bg-[#EFF6F0] border-[#BED6C4]",
+    blue:
+      "bg-[#EEF4F7] border-[#C3D4DE]",
+  };
+
+  return (
+    <article
+      className={`
+        rounded-[28px]
+        border
+        p-6
+        ${colors[color]}
+      `}
+    >
+      <div
+        className="
+          flex
+          justify-between
+          items-center
+        "
+      >
+        <span
+          className="
+            text-xs
+            font-black
+            tracking-[0.12em]
+          "
+        >
+          {number}
         </span>
 
         {icon}
       </div>
 
-      <p className="text-2xl font-bold mt-4">
-        {value}
-      </p>
+      <h3
+        className="
+          text-xl
+          font-black
+          mt-8
+        "
+      >
+        {title}
+      </h3>
 
-    </div>
+      <p
+        className="
+          text-sm
+          text-[#6F685D]
+          mt-2
+          leading-relaxed
+        "
+      >
+        {text}
+      </p>
+    </article>
   );
 }
 
-
-function FoodItem({
-  title,
-  value,
+function PrivacyItem({
+  children,
 }: {
-  title: string;
-  value: string | null;
+  children: ReactNode;
 }) {
   return (
-    <div className="rounded-2xl bg-zinc-950 border border-zinc-800 p-5">
+    <div
+      className="
+        rounded-[18px]
+        bg-[#EFF6F0]
+        border
+        border-[#C7DDCC]
+        p-4
+        flex
+        items-start
+        gap-3
+      "
+    >
+      <Check
+        size={18}
+        className="shrink-0 mt-0.5"
+      />
 
-      <p className="text-zinc-500 text-xs uppercase tracking-wider">
-        {title}
-      </p>
-
-      <p className="font-semibold mt-2">
-        {value || "—"}
-      </p>
-
+      <span
+        className="
+          text-sm
+          font-semibold
+        "
+      >
+        {children}
+      </span>
     </div>
   );
 }
 
+function NodeBox({
+  title,
+  subtitle,
+  online,
+}: {
+  title: string;
+  subtitle: string;
+  online: boolean;
+}) {
+  return (
+    <div
+      className="
+        rounded-[20px]
+        border
+        border-[#E3DBCE]
+        p-5
+        bg-[#FBF7EE]
+      "
+    >
+      <div
+        className="
+          flex
+          justify-between
+          gap-3
+        "
+      >
+        <b>{title}</b>
 
-function EmptyState({
+        {
+          online
+            ?
+              <Wifi
+                size={18}
+                className="text-[#4D9362]"
+              />
+            :
+              <WifiOff
+                size={18}
+                className="text-[#A69E91]"
+              />
+        }
+      </div>
+
+      <p
+        className="
+          text-sm
+          text-[#756E63]
+          mt-2
+        "
+      >
+        {subtitle}
+      </p>
+
+      <p
+        className={`
+          text-xs
+          font-black
+          mt-4
+          ${
+            online
+              ?
+                "text-[#4D9362]"
+              :
+                "text-[#A69E91]"
+          }
+        `}
+      >
+        {online ? "ONLINE" : "OFFLINE"}
+      </p>
+    </div>
+  );
+}
+
+function DefinitionCard({
+  title,
   text,
 }: {
+  title: string;
   text: string;
 }) {
   return (
-    <div className="py-20 text-center text-zinc-500">
-      <Database
-        className="mx-auto mb-4"
-        size={31}
-      />
+    <div
+      className="
+        rounded-[18px]
+        border
+        border-[#E5DDCF]
+        p-4
+        bg-[#FBF7EE]
+      "
+    >
+      <b>{title}</b>
 
-      <p>
+      <p
+        className="
+          text-sm
+          text-[#716A60]
+          mt-2
+          leading-relaxed
+        "
+      >
         {text}
       </p>
     </div>
   );
 }
 
+function EmptyState({
+  children,
+}: {
+  children: ReactNode;
+}) {
+  return (
+    <div
+      className="
+        py-20
+        text-center
+        text-[#8B8377]
+      "
+    >
+      <Database
+        size={30}
+        className="mx-auto mb-3"
+      />
+
+      {children}
+    </div>
+  );
+}
+
+function Th({
+  children,
+}: {
+  children: ReactNode;
+}) {
+  return (
+    <th
+      className="
+        py-3
+        pr-5
+        font-bold
+      "
+    >
+      {children}
+    </th>
+  );
+}
+
+function Td({
+  children,
+}: {
+  children: ReactNode;
+}) {
+  return (
+    <td
+      className="
+        py-4
+        pr-5
+      "
+    >
+      {children}
+    </td>
+  );
+}
+
+const tooltipStyle = {
+  background: "#FFFDF7",
+  border: "1px solid #DED6C7",
+  borderRadius: "14px",
+  color: "#18352B",
+};
 
 function formatWait(seconds: number) {
+  if (!Number.isFinite(seconds)) {
+    return "—";
+  }
+
   if (seconds < 60) {
     return `${seconds.toFixed(0)} sec`;
   }
 
   return `${(seconds / 60).toFixed(1)} min`;
+}
+
+function ageSeconds(
+  row: LiveStatus | undefined,
+  now: number
+) {
+  if (!row) {
+    return 999;
+  }
+
+  return Math.max(
+    0,
+    (
+      now
+      -
+      new Date(row.updated_at).getTime()
+    )
+    / 1000
+  );
+}
+
+function mealLabel(meal: string) {
+  if (meal === "breakfast") {
+    return "Breakfast";
+  }
+
+  if (meal === "lunch") {
+    return "Lunch";
+  }
+
+  if (meal === "dinner") {
+    return "Dinner";
+  }
+
+  if (meal === "test") {
+    return "Test mode";
+  }
+
+  return meal.replaceAll("_", " ");
+}
+
+function mealShort(meal: string) {
+  if (meal === "breakfast") {
+    return "B";
+  }
+
+  if (meal === "lunch") {
+    return "L";
+  }
+
+  if (meal === "dinner") {
+    return "D";
+  }
+
+  return meal;
+}
+
+function formatShortDate(value: string) {
+  return new Date(
+    `${value}T00:00:00`
+  ).toLocaleDateString(
+    "en-GB",
+    {
+      day: "2-digit",
+      month: "short",
+    }
+  );
+}
+
+function formatLongDate(value: string) {
+  return new Date(
+    `${value}T00:00:00`
+  ).toLocaleDateString(
+    "en-GB",
+    {
+      day: "numeric",
+      month: "short",
+      year: "numeric",
+    }
+  );
 }
