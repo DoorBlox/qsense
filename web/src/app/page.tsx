@@ -129,6 +129,14 @@ type Validation = {
   data_source: string;
 };
 
+
+type LivePoint = {
+  time: string;
+  queue: number;
+  throughput: number;
+  waitSeconds: number;
+};
+
 type Tab =
   | "overview"
   | "analytics"
@@ -161,6 +169,7 @@ export default function Home() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [nowMs, setNowMs] = useState(Date.now());
+  const [liveSeries, setLiveSeries] = useState<LivePoint[]>([]);
 
   const loadLive = useCallback(async () => {
     const { data, error } = await supabase
@@ -174,7 +183,75 @@ export default function Home() {
       return;
     }
 
-    setLive((data ?? []) as LiveStatus[]);
+    const rows = (data ?? []) as LiveStatus[];
+
+    setLive(rows);
+
+    const sampleNow = Date.now();
+
+    const activeRows = rows.filter((row) => {
+      const age =
+        (
+          sampleNow
+          -
+          new Date(row.updated_at).getTime()
+        )
+        / 1000;
+
+      return row.camera_online && age < 20;
+    });
+
+    const queue = activeRows.reduce(
+      (sum, row) =>
+        sum + (row.queue_count ?? 0),
+      0
+    );
+
+    const throughput = activeRows.reduce(
+      (sum, row) =>
+        sum + (row.throughput_per_min ?? 0),
+      0
+    );
+
+    const waitSeconds =
+      activeRows.length > 0
+        ?
+          activeRows.reduce(
+            (sum, row) =>
+              sum + (row.avg_wait_seconds ?? 0),
+            0
+          )
+          / activeRows.length
+        :
+          0;
+
+    setLiveSeries((previous) => {
+      const next = [
+        ...previous,
+        {
+          time: new Date(sampleNow)
+            .toLocaleTimeString(
+              [],
+              {
+                hour: "2-digit",
+                minute: "2-digit",
+                second: "2-digit",
+              }
+            ),
+          queue,
+          throughput: Number(
+            throughput.toFixed(2)
+          ),
+          waitSeconds: Number(
+            waitSeconds.toFixed(1)
+          ),
+        },
+      ];
+
+      // Keep about two minutes at 3-second polling.
+      return next.slice(-40);
+    });
+
     setError(null);
     setLoading(false);
   }, []);
@@ -992,6 +1069,224 @@ export default function Home() {
                 color="purple"
               />
             </section>
+
+            <PaperCard>
+              <div
+                className="
+                  flex
+                  flex-col
+                  sm:flex-row
+                  sm:items-start
+                  justify-between
+                  gap-4
+                "
+              >
+                <SectionTitle
+                  eyebrow="Live pulse"
+                  title="Queue right now"
+                  icon={<Activity />}
+                />
+
+                <div
+                  className="
+                    self-start
+                    px-3
+                    py-1.5
+                    rounded-full
+                    bg-[#EFF6F0]
+                    border
+                    border-[#BED6C4]
+                    text-xs
+                    font-black
+                    text-[#356447]
+                    flex
+                    items-center
+                    gap-2
+                  "
+                >
+                  <span
+                    className="
+                      w-2
+                      h-2
+                      rounded-full
+                      bg-[#4D9362]
+                      animate-pulse
+                    "
+                  />
+                  UPDATES EVERY 3 SEC
+                </div>
+              </div>
+
+              <div
+                className="
+                  mt-5
+                  grid
+                  lg:grid-cols-[1fr_auto]
+                  gap-5
+                  items-stretch
+                "
+              >
+                <div className="h-[300px] min-w-0">
+                  {
+                    liveSeries.length >= 2
+                      ?
+                        (
+                          <ResponsiveContainer
+                            width="100%"
+                            height="100%"
+                          >
+                            <LineChart
+                              data={liveSeries}
+                              margin={{
+                                top: 12,
+                                right: 14,
+                                bottom: 0,
+                                left: -16,
+                              }}
+                            >
+                              <CartesianGrid
+                                stroke="#E9E2D5"
+                                strokeDasharray="4 4"
+                                vertical={false}
+                              />
+
+                              <XAxis
+                                dataKey="time"
+                                tickLine={false}
+                                axisLine={false}
+                                stroke="#8E877B"
+                                minTickGap={36}
+                              />
+
+                              <YAxis
+                                allowDecimals={false}
+                                domain={[
+                                  0,
+                                  (dataMax: number) =>
+                                    Math.max(
+                                      4,
+                                      Math.ceil(dataMax + 1)
+                                    ),
+                                ]}
+                                tickLine={false}
+                                axisLine={false}
+                                stroke="#8E877B"
+                              />
+
+                              <Tooltip
+                                contentStyle={tooltipStyle}
+                                formatter={(
+                                  value,
+                                  name
+                                ) => [
+                                  name === "Queue"
+                                    ? `${value} people`
+                                    : value,
+                                  name,
+                                ]}
+                              />
+
+                              <Line
+                                type="monotone"
+                                dataKey="queue"
+                                name="Queue"
+                                stroke={COLORS.tomato}
+                                strokeWidth={4}
+                                dot={false}
+                                activeDot={{
+                                  r: 6,
+                                  fill: COLORS.tomato,
+                                  stroke: "#FFFDF7",
+                                  strokeWidth: 3,
+                                }}
+                                isAnimationActive
+                                animationDuration={450}
+                              />
+                            </LineChart>
+                          </ResponsiveContainer>
+                        )
+                      :
+                        (
+                          <div
+                            className="
+                              h-full
+                              rounded-[22px]
+                              bg-[#FBF7EE]
+                              border
+                              border-dashed
+                              border-[#D9D0C2]
+                              flex
+                              items-center
+                              justify-center
+                              text-center
+                              px-6
+                              text-sm
+                              text-[#7B7468]
+                            "
+                          >
+                            Gathering live points...
+                            <br />
+                            The graph appears after
+                            the next update.
+                          </div>
+                        )
+                  }
+                </div>
+
+                <div
+                  className="
+                    lg:w-[220px]
+                    grid
+                    sm:grid-cols-3
+                    lg:grid-cols-1
+                    gap-3
+                  "
+                >
+                  <LiveMiniCard
+                    label="Now"
+                    value={
+                      onlineRows.length
+                        ? `${totalQueue}`
+                        : "—"
+                    }
+                    suffix="people"
+                  />
+
+                  <LiveMiniCard
+                    label="Flow"
+                    value={
+                      onlineRows.length
+                        ? liveThroughput.toFixed(1)
+                        : "—"
+                    }
+                    suffix="/ min"
+                  />
+
+                  <LiveMiniCard
+                    label="Avg wait"
+                    value={
+                      onlineRows.length
+                        ? liveWait.toFixed(0)
+                        : "—"
+                    }
+                    suffix="sec"
+                  />
+                </div>
+              </div>
+
+              <p
+                className="
+                  mt-4
+                  text-xs
+                  text-[#8A8276]
+                "
+              >
+                This live chart is browser-session
+                history only. It does not create
+                additional research records in
+                Supabase.
+              </p>
+            </PaperCard>
 
             <section
               className="
@@ -2443,6 +2738,71 @@ function MetricCard({
     </div>
   );
 }
+
+function LiveMiniCard({
+  label,
+  value,
+  suffix,
+}: {
+  label: string;
+  value: string;
+  suffix: string;
+}) {
+  return (
+    <div
+      className="
+        rounded-[20px]
+        bg-[#FBF7EE]
+        border
+        border-[#E5DDCF]
+        p-4
+      "
+    >
+      <p
+        className="
+          text-xs
+          font-black
+          tracking-[0.08em]
+          uppercase
+          text-[#8A8276]
+        "
+      >
+        {label}
+      </p>
+
+      <div
+        className="
+          mt-2
+          flex
+          items-end
+          gap-1.5
+          flex-wrap
+        "
+      >
+        <span
+          className="
+            text-3xl
+            font-black
+            tracking-[-0.04em]
+          "
+        >
+          {value}
+        </span>
+
+        <span
+          className="
+            text-xs
+            text-[#7B7468]
+            mb-1
+          "
+        >
+          {suffix}
+        </span>
+      </div>
+    </div>
+  );
+}
+
 
 function SectionTitle({
   eyebrow,
